@@ -1,59 +1,40 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
+/**
+ * Pengguna klinik.
+ *
+ * Tabelnya hidup di database TENANT, bukan pusat (lihat
+ * database/migrations/tenant/). Konsekuensinya: dua klinik boleh punya user
+ * dengan email yang sama, dan tidak ada satu pun query yang bisa menjangkau
+ * user klinik lain — isolasinya struktural, bukan hasil `where tenant_id = ?`
+ * yang bisa terlupa di satu query.
+ *
+ * Role & permission menyusul di S1-06.
+ */
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
-    protected $fillable = ["name", "email", "password"];
+    use Notifiable;
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
-    protected $hidden = ["password", "remember_token"];
+    protected $fillable = ['name', 'email', 'password'];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
+    protected $hidden = ['password', 'remember_token'];
+
     protected function casts(): array
     {
         return [
-            "email_verified_at" => "datetime",
-            "password" => "hashed",
+            'email_verified_at' => 'datetime',
+            'password' => 'hashed',
         ];
-    }
-
-    public function isAdmin(): bool
-    {
-        return $this->role == "admin";
-    }
-
-    public function isUser(): bool
-    {
-        return $this->role == "user";
-    }
-
-    public function savedStarterKits()
-    {
-        return $this->belongsToMany(
-            StarterKit::class,
-            "saved_starter_kits",
-        )->withTimestamps();
     }
 }

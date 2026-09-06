@@ -4,8 +4,33 @@ export interface User {
     email: string;
 }
 
-export interface PageProps {
-    auth: {
-        user: User | null;
-    };
+export type TenantStatus =
+    | "provisioning"
+    | "active"
+    | "read_only"
+    | "suspended";
+
+export interface TenantSummary {
+    slug: string;
+    name: string;
+    status: TenantStatus;
+    statusLabel: string;
+    readOnly: boolean;
+}
+
+/**
+ * Props yang dibagikan ke setiap halaman lewat HandleInertiaRequests::share().
+ *
+ * Index signature-nya wajib: usePage<T>() dari Inertia mensyaratkan T bisa
+ * diperlakukan sebagai Record<string, unknown>, karena props per-halaman ikut
+ * bergabung ke objek yang sama.
+ */
+export interface SharedProps {
+    [key: string]: unknown;
+
+    appName: string;
+    auth: { user: User | null };
+    /** null saat berada di konteks pusat, terisi saat di dalam subdomain klinik. */
+    tenant: TenantSummary | null;
+    flash: { success: string | null; error: string | null };
 }

@@ -22,14 +22,45 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
-        <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
-        <env name="PULSE_ENABLED" value="false"/>
-        <env name="TELESCOPE_ENABLED" value="false"/>
-        <env name="NIGHTWATCH_ENABLED" value="false"/>
+
+        <!--
+            Test isolasi tenant memakai MySQL sungguhan, bukan SQLite in-memory.
+            Yang dibuktikan suite ini adalah bahwa dua tenant benar-benar berada
+            di dua database terpisah; SQLite akan membuktikan sesuatu yang lain,
+            di driver yang tidak pernah dipakai produksi.
+        -->
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
+        <env name="DB_PORT" value="3307"/>
+        <env name="DB_DATABASE" value="simklinik_testing"/>
+        <env name="DB_USERNAME" value="root"/>
+        <env name="DB_PASSWORD" value="secret"/>
+
+        <!-- Prefix terpisah supaya pembersihan test tidak pernah menyentuh
+             database tenant milik lingkungan pengembangan. -->
+        <env name="TENANCY_DB_PREFIX" value="simklinik_test_"/>
+
+        <!--
+            Cache memakai Redis sungguhan, bukan driver `array`. Driver array
+            hidup di memori instance-nya sendiri, dan setiap kali tenancy
+            di-bootstrap paket mengganti instance cache manager — sehingga
+            nilai yang baru ditulis "hilang" karena alasan yang tidak ada
+            hubungannya dengan isolasi. Test isolasi cache jadi hijau-palsu.
+            Database Redis 15 dipakai khusus test dan dikosongkan tiap test.
+        -->
+        <env name="CACHE_STORE" value="redis"/>
+        <env name="REDIS_CLIENT" value="predis"/>
+        <env name="REDIS_HOST" value="127.0.0.1"/>
+        <env name="REDIS_PORT" value="6379"/>
+        <env name="REDIS_CACHE_DB" value="15"/>
+
+        <!-- Domain test sengaja berbeda dari domain dev, untuk membuktikan
+             resolusi subdomain memang dibaca dari konfigurasi. -->
+        <env name="APP_URL" value="http://simklinik.test"/>
+        <env name="CENTRAL_DOMAIN" value="simklinik.test"/>
+        <env name="CENTRAL_DOMAINS" value="simklinik.test,admin.simklinik.test"/>
     </php>
 </phpunit>

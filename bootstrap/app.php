@@ -1,26 +1,38 @@
 <?php
 
-use App\Http\Middleware\RoleMiddleware;
+declare(strict_types=1);
+
+use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
-        web: __DIR__ . "/../routes/web.php",
-        api: __DIR__ . "/../routes/api.php",
-        commands: __DIR__ . "/../routes/console.php",
-        health: "/up",
+        commands: __DIR__.'/../routes/console.php',
+        health: '/up',
+        then: function () {
+            // URUTAN PENTING. Router memilih rute pertama yang cocok, dan rute
+            // pusat sengaja tidak dibatasi domain. Kalau rute pusat didaftarkan
+            // lebih dulu, `/` di subdomain tenant akan dilayani oleh landing
+            // page pusat — tenancy tidak pernah diinisialisasi, dan halaman itu
+            // membaca database yang salah tanpa satu pun error.
+            //
+            // Rute tenant lebih spesifik (punya batasan domain), jadi ia harus
+            // mendapat giliran pertama.
+            Route::group([], base_path('routes/tenant.php'));
+            Route::group([], base_path('routes/central.php'));
+        },
     )
     ->withMiddleware(function (Middleware $middleware) {
-        $middleware->alias([
-            "role" => RoleMiddleware::class,
+        $middleware->web(append: [
+            HandleInertiaRequests::class,
         ]);
-        $middleware->web(
-            append: [\App\Http\Middleware\HandleInertiaRequests::class],
-        );
 
-        // $middleware->redirectTo("/admin/starter-kits/");
+        // Prioritas middleware identifikasi tenant diatur di
+        // App\Providers\TenancyServiceProvider: ia harus berjalan sebelum
+        // apa pun yang menyentuh database, termasuk StartSession.
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

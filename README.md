@@ -1,193 +1,138 @@
-# Laravel React Starter Kit
+# SIMKlinik
 
-A clean and minimal starter kit for building modern web applications with Laravel 12, React 18, Inertia.js, and TypeScript.
+Sistem Informasi Manajemen Klinik berbasis SaaS multi-tenant, dengan Rekam Medis
+Elektronik yang dirancang **compliance-first** terhadap Permenkes 24/2022 dan
+interoperabel dengan SATUSEHAT (HL7 FHIR R4).
 
-> **No authentication, no admin panel, just pure starter kit ready for your project.**
+Dokumen acuan: [PRD](PRD-SIM-Klinik-SaaS.md) · [Sprint 1 — Fondasi](Sprint-1-Fondasi.md)
 
-Created by [syaafiudinm](https://github.com/syaafiudinm)
+**Status:** Sprint 1 (Fase F0 — Fondasi). Selesai sampai **S1-03**.
 
-## Features
-
--  **Laravel 12** - Latest Laravel framework
--  **React 18** - Modern React with TypeScript support
--  **Inertia.js** - Build single-page apps without building an API
--  **Tailwind CSS v4** - Latest Tailwind with new engine
--  **TypeScript** - Full type safety
--  **MySQL** - Pre-configured database connection
--  **Pest PHP** - Modern testing framework
--  **Vite** - Lightning fast HMR
-
-## Tech Stack
-
-- Laravel 12
-- React 18
-- Inertia.js
-- TypeScript
-- Tailwind CSS v4
-- MySQL
-- Vite
-
-## Requirements
-
-- PHP >= 8.2
-- Composer
-- Node.js >= 18
-- MySQL
-
-## Installation
-
-1. Clone the repository
-```bash
-git clone https://github.com/syaafiudinm/inertia-starter-kit.git
-cd inertia-starter-kit
-```
-
-2. Install PHP dependencies
-```bash
-composer install
-```
-
-3. Install JavaScript dependencies
-```bash
-npm install
-```
-
-4. Copy environment file
-```bash
-cp .env.example .env
-```
-
-5. Generate application key
-```bash
-php artisan key:generate
-```
-
-6. Configure your database in `.env`
-```env
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=your_database_name
-DB_USERNAME=your_username
-DB_PASSWORD=your_password
-```
-
-7. Run migrations
-```bash
-php artisan migrate
-```
-
-8. Start development server
-```bash
-# Terminal 1 - Vite dev server
-npm run dev
-
-# Terminal 2 - Laravel server
-php artisan serve
-```
-
-9. Open your browser at `http://localhost:8000`
-
-## Project Structure
-```
-├── app/
-│   └── Http/
-│       └── Middleware/
-│           └── HandleInertiaRequests.php
-├── resources/
-│   ├── css/
-│   │   └── app.css
-│   ├── js/
-│   │   ├── Pages/
-│   │   │   └── Home.tsx
-│   │   ├── app.tsx
-│   │   ├── bootstrap.ts
-│   │   ├── global.d.ts
-│   │   └── vite-env.d.ts
-│   └── views/
-│       └── app.blade.php
-├── routes/
-│   └── web.php
-└── vite.config.ts
-```
-
-## Building for Production
-```bash
-npm run build
-```
-
-## What's Not Included
-
-This starter kit intentionally excludes:
-- Authentication system (Laravel Breeze/Fortify)
-- Admin panel
-- User management
-- Authorization/Permissions
-
-This gives you complete freedom to implement authentication and authorization in your own way, or skip it entirely for public-facing applications.
-
-## Customization
-
-### Adding New Pages
-
-1. Create a new component in `resources/js/Pages/`
-```tsx
-// resources/js/Pages/About.tsx
-import { Head } from '@inertiajs/react';
-
-export default function About() {
-    return (
-        <>
-            
-            About Page
-        </>
-    );
-}
-```
-
-2. Add route in `routes/web.php`
-```php
-Route::get('/about', function () {
-    return Inertia::render('About');
-});
-```
-
-### Shared Data
-
-Edit `app/Http/Middleware/HandleInertiaRequests.php` to share data across all pages:
-```php
-public function share(Request $request): array
-{
-    return [
-        ...parent::share($request),
-        'appName' => config('app.name'),
-        'flash' => [
-            'success' => fn () => $request->session()->get('success'),
-            'error' => fn () => $request->session()->get('error'),
-        ],
-    ];
-}
-```
-
-## License
-
-This project is open-sourced software licensed under the [MIT license](LICENSE).
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Credits
-
-- [Laravel](https://laravel.com)
-- [React](https://react.dev)
-- [Inertia.js](https://inertiajs.com)
-- [Tailwind CSS](https://tailwindcss.com)
-
-## Support
-
-If you find this project helpful, please give it a ⭐️ on GitHub!
+| Task | | |
+|---|---|---|
+| S1-01 | Setup proyek & tooling | ✅ |
+| S1-02 | Central schema & model tenant | ✅ |
+| S1-03 | `stancl/tenancy` + resolusi subdomain | ✅ |
+| S1-04 | Provisioning tenant otomatis | ⬜ berikutnya |
+| S1-05 … S1-11 | | ⬜ |
 
 ---
 
-Built with ❤️ by [syaafiudinm](https://github.com/syaafiudinm)
+## Stack
+
+Laravel 12 (PHP 8.3+) · Inertia.js · React 19 + TypeScript · Vite · Tailwind CSS v4 ·
+MySQL 8 · Redis · [`stancl/tenancy`](https://tenancyforlaravel.com) (database-per-tenant) · Pest
+
+## Kebutuhan
+
+- PHP 8.3+ dengan `pdo_mysql`
+- Composer 2
+- Node.js 20+
+- Docker (untuk MySQL 8 & Redis)
+
+## Setup
+
+```bash
+git clone <repo> simklinik && cd simklinik
+make setup
+```
+
+`make setup` menyalin `.env`, menyalakan MySQL + Redis lewat Docker, memasang
+dependensi, menjalankan migrasi pusat, lalu membuat tiga klinik contoh beserta
+database masing-masing.
+
+Menjalankan aplikasi:
+
+```bash
+make dev     # server Laravel :8000 + Vite + worker antrian
+```
+
+| Alamat | Isi |
+|---|---|
+| <http://simklinik.localhost:8000> | Domain pusat (panel vendor menyusul di S1-10) |
+| <http://klinik-melati.simklinik.localhost:8000> | Klinik aktif |
+| <http://klinik-anggrek.simklinik.localhost:8000> | Klinik hanya-baca (banner peringatan) |
+| <http://klinik-kamboja.simklinik.localhost:8000> | Klinik ditangguhkan (halaman penjelasan) |
+
+Akun contoh tiap klinik: `admin@<slug>.test` / `password`.
+
+> **Kenapa `.localhost` dan bukan `.test`:** Chrome, Safari, dan Firefox
+> meresolve `*.localhost` ke 127.0.0.1 secara otomatis. Tidak perlu dnsmasq
+> maupun menyunting `/etc/hosts`, dan tidak ada langkah setup yang berbeda antar
+> mesin developer. Domainnya dibaca dari `CENTRAL_DOMAIN` di `.env`, jadi
+> staging dan produksi tinggal mengganti satu baris.
+
+## Test
+
+```bash
+make test
+```
+
+Suite memakai **MySQL sungguhan**, bukan SQLite in-memory: yang dibuktikan
+adalah dua tenant benar-benar berada di dua database terpisah, dan SQLite akan
+membuktikan hal itu di driver yang tidak pernah dipakai produksi.
+
+Berkas terpenting di repo ini adalah
+[`tests/Feature/TenantIsolationTest.php`](tests/Feature/TenantIsolationTest.php).
+Setiap kali ditemukan celah isolasi baru, **tambahkan test-nya di sana dulu,
+baru perbaiki kodenya.**
+
+## Arsitektur
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  simklinik.localhost              klinik-x.simklinik.localhost│
+│  routes/central.php               routes/tenant.php           │
+│  PreventAccessFromTenantDomains   InitializeTenancyBySubdomain│
+│                                   ScopeSessions               │
+│                                   EnsureTenantIsUsable        │
+└───────────────┬───────────────────────────┬──────────────────┘
+                ▼                           ▼
+    ┌───────────────────────┐   ┌───────────────────────────────┐
+    │  simklinik_central    │   │  simklinik_klinik_melati      │
+    │  tenants · domains    │   │  simklinik_klinik_anggrek     │
+    │  tenant_settings      │   │  simklinik_klinik_kamboja     │
+    │  (tanpa data klinis)  │   │  users · (data klinis, S2)    │
+    └───────────────────────┘   └───────────────────────────────┘
+```
+
+Rute pusat dan rute tenant dipisahkan pada **pencocokan rute**, bukan sekadar di
+middleware: grup tenant terikat pola domain `{tenant}.<CENTRAL_DOMAIN>`,
+sehingga sebuah path yang lupa dipasangi middleware tetap tidak bisa terjawab di
+sisi yang salah.
+
+### Keputusan yang sudah diambil
+
+| Keputusan | Alasan |
+|---|---|
+| Database-per-tenant | Isolasi mudah dibuktikan saat audit Dinkes; ekspor data per klinik jadi sederhana; blast radius kecil |
+| `db_host` & `db_port` disimpan sejak awal | Memindahkan tenant besar ke server DB terpisah nanti cukup UPDATE satu baris, tanpa ubah kode (PRD §5.4) |
+| Nama database dari slug (`simklinik_klinik_melati`) | Terbaca manusia saat menelusuri `SHOW DATABASES` atau daftar backup |
+| Kunci primer UUID v7 | Berurutan secara leksikografis, sehingga insert selalu di ujung indeks InnoDB |
+| `db_password` dengan encrypted cast | Dump database saja tidak cukup untuk membuka kredensial tenant |
+| Status `read_only`, bukan blokir total | FR-M23.4 — tunggakan tagihan tidak boleh menutup akses baca rekam medis |
+
+## Perintah
+
+| | |
+|---|---|
+| `make setup` | Pasang semuanya dari nol |
+| `make up` / `make down` | Nyalakan / matikan MySQL + Redis |
+| `make dev` | Server + Vite + worker antrian |
+| `make test` | Seluruh suite, termasuk isolasi tenant |
+| `make fresh` | Hapus semua tenant, migrasi & seed ulang |
+| `make tenants` | Daftar tenant beserta alamatnya |
+| `make lint` | Pint + `tsc --noEmit` |
+
+Migrasi tenant hidup di `database/migrations/tenant/` dan dijalankan dengan
+`php artisan tenants:migrate` — terpisah dari migrasi pusat di
+`database/migrations/`.
+
+> **Migrasi wajib backward-compatible.** Satu codebase melayani semua tenant.
+> Kalau `tenants:migrate` gagal di tenant ke-30, tenant itu tertinggal di skema
+> lama sementara kodenya sudah baru. Polanya selalu *expand → deploy → backfill
+> → contract* (PRD §5.4).
+
+## Lisensi
+
+MIT.

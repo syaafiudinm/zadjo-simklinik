@@ -4,7 +4,7 @@ Sistem Informasi Manajemen Klinik berbasis SaaS multi-tenant, dengan Rekam Medis
 Elektronik yang dirancang **compliance-first** terhadap Permenkes 24/2022 dan
 interoperabel dengan SATUSEHAT (HL7 FHIR R4).
 
-Dokumen acuan: [PRD](PRD-SIM-Klinik-SaaS.md) · [Sprint 1 — Fondasi](Sprint-1-Fondasi.md)
+Dokumen acuan: [Arsitektur](docs/ARCHITECTURE.md) · [PRD](PRD-SIM-Klinik-SaaS.md) · [Sprint 1 — Fondasi](Sprint-1-Fondasi.md)
 
 **Status:** Sprint 1 (Fase F0 — Fondasi). Selesai sampai **S1-06**.
 

@@ -8,14 +8,13 @@ use App\Enums\TenantStatus;
 use App\Events\TenantProvisioned;
 use App\Events\TenantProvisioningStepCompleted;
 use App\Exceptions\TenantProvisioningException;
+use App\Jobs\SendUserInvitation;
 use App\Models\Tenant;
 use App\Models\User;
-use App\Notifications\TenantAdminInvitation;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use LogicException;
 use RuntimeException;
@@ -45,7 +44,7 @@ final class TenantProvisioner
         'migrate' => 'Menjalankan migrasi tenant',
         'seed' => 'Menyemai role, permission, dan poli default',
         'create_admin' => 'Membuat akun admin klinik',
-        'send_invitation' => 'Mengirim email undangan',
+        'send_invitation' => 'Menjadwalkan email undangan',
         'activate' => 'Mengaktifkan tenant',
     ];
 
@@ -107,7 +106,7 @@ final class TenantProvisioner
             $this->complete($tenant, $step);
 
             $step = $this->begin($tenant, 'create_admin');
-            [$admin, $token] = $tenant->run(function () use ($tenant) {
+            $admin = $tenant->run(function () use ($tenant) {
                 $admin = User::create([
                     'name' => $tenant->admin_name,
                     'email' => $tenant->admin_email,
@@ -117,12 +116,20 @@ final class TenantProvisioner
                 ]);
                 $admin->assignRole('clinic_admin');
 
-                return [$admin, Password::broker('invitations')->createToken($admin)];
+                return $admin;
             });
             $this->complete($tenant, $step);
 
+            // Dijadwalkan, bukan dikirim di sini: SMTP yang tersendat tidak
+            // boleh membongkar klinik yang sudah siap. Job-nya di-retry sendiri.
             $step = $this->begin($tenant, 'send_invitation');
-            $tenant->run(fn () => $admin->notify(new TenantAdminInvitation($tenant, $token)));
+            // Closure berblok, BUKAN arrow function. `Job::dispatch()` baru
+            // benar-benar men-dispatch saat PendingDispatch dihancurkan; arrow
+            // function mengembalikan objek itu keluar dari run(), sehingga
+            // dispatch terjadi setelah tenancy berakhir — tanpa konteks tenant.
+            $tenant->run(function () use ($admin) {
+                SendUserInvitation::dispatch($admin);
+            });
             $this->complete($tenant, $step);
 
             $step = $this->begin($tenant, 'activate');

@@ -39,6 +39,7 @@ class AuthenticatedSessionController extends Controller
 
     public function destroy(Request $request): RedirectResponse
     {
+        $request->attributes->set('logout_reason', $request->input('reason') === 'idle' ? 'idle_client' : 'manual');
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();

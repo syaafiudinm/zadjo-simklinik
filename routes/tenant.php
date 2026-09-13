@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Tenant\AuditLogController;
 use App\Http\Controllers\Tenant\Auth\AcceptInvitationController;
 use App\Http\Controllers\Tenant\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Tenant\Auth\NewPasswordController;
@@ -108,5 +109,9 @@ Route::domain('{tenant}.'.$centralDomain)
             Route::post('/users', [UserController::class, 'store'])
                 ->middleware('permission:user.create')
                 ->name('users.store');
+
+            Route::get('/audit-logs', [AuditLogController::class, 'index'])
+                ->middleware('permission:audit_log.view')
+                ->name('audit-logs.index');
         });
     });

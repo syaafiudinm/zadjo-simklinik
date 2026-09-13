@@ -136,7 +136,8 @@ return [
      *
      * To enable, set to true, and then create listeners to watch these events.
      */
-    'events_enabled' => false,
+    // Dinyalakan untuk jejak audit pemberian/pencabutan peran (S1-07).
+    'events_enabled' => true,
 
     /*
      * Teams Feature.

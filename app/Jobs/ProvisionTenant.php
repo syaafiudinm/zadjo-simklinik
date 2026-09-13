@@ -34,7 +34,12 @@ class ProvisionTenant implements ShouldQueue
     /** Target PRD FR-M23.1: tenant siap < 3 menit. */
     public int $timeout = 170;
 
-    public function __construct(public readonly string $tenantId) {}
+    public function __construct(public readonly string $tenantId)
+    {
+        // Antrian sendiri: provisioning yang lambat tidak boleh menahan email
+        // undangan dan pekerjaan klinik lain di antrian `default`.
+        $this->onQueue('provisioning');
+    }
 
     public function handle(TenantProvisioner $provisioner): void
     {
@@ -61,6 +66,8 @@ class ProvisionTenant implements ShouldQueue
     /** @return list<string> */
     public function tags(): array
     {
-        return ['provisioning', 'tenant:'.$this->tenantId];
+        // Job pusat: tag tenant ditambahkan eksplisit karena tidak ada konteks
+        // tenant saat ia di-dispatch.
+        return ['provisioning', 'tenant-id:'.$this->tenantId];
     }
 }

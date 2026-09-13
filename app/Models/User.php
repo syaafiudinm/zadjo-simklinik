@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Models\Concerns\Auditable;
 use App\Notifications\ResetPasswordNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -24,6 +25,8 @@ use Spatie\Permission\Traits\HasRoles;
  */
 class User extends Authenticatable
 {
+    use Auditable;
+
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory;
 
@@ -44,6 +47,21 @@ class User extends Authenticatable
             'activated_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * `last_login_at` berubah setiap kali masuk dan sudah tercatat sebagai
+     * kejadian `login` tersendiri; mencatatnya juga sebagai "mengubah
+     * pengguna" hanya menggandakan setiap baris login.
+     */
+    public function auditExcludedAttributes(): array
+    {
+        return ['created_at', 'updated_at', 'last_login_at', 'remember_token'];
+    }
+
+    public function auditLabel(): string
+    {
+        return "{$this->name} <{$this->email}>";
     }
 
     /**

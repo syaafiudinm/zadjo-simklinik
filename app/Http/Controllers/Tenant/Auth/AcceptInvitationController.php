@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Tenant\Auth;
 
+use App\Enums\AuditEvent;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\EnforceIdleTimeout;
 use App\Models\User;
+use App\Support\Audit\AuditLogger;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -65,6 +67,8 @@ class AcceptInvitationController extends Controller
                 'email' => 'Undangan tidak valid atau sudah kedaluwarsa. Minta admin klinik mengirim ulang undangan.',
             ]);
         }
+
+        app(AuditLogger::class)->record(AuditEvent::InvitationAccepted, $accepted, actor: $accepted);
 
         Auth::login($accepted);
         $request->session()->regenerate();

@@ -66,15 +66,17 @@ class UserController extends Controller
         ]);
 
         DB::transaction(function () use ($data) {
-            $user = User::create([
+            // Satu insert, bukan create lalu save ulang: jejak audit mencatat
+            // satu kejadian "membuat", bukan "membuat" disusul "mengubah".
+            // Password ditetapkan admin, jadi akun langsung aktif. Ganti
+            // password wajib saat login pertama menyusul bersama 2FA (FR-M21.5).
+            $user = (new User)->forceFill([
                 'name' => $data['name'],
                 'email' => $data['email'],
                 'password' => $data['password'],
+                'activated_at' => now(),
             ]);
-
-            // Password ditetapkan admin, jadi akun langsung aktif. Ganti
-            // password wajib saat login pertama menyusul bersama 2FA (FR-M21.5).
-            $user->forceFill(['activated_at' => now()])->save();
+            $user->save();
             $user->assignRole($data['role']);
         });
 

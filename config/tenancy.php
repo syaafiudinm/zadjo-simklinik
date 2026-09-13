@@ -132,6 +132,10 @@ return [
 
     'migration_parameters' => [
         '--force' => true,
+        // Migrasi tenant berjalan dengan kredensial admin lewat koneksi
+        // `tenant_migrator` (didefinisikan saat tenancy aktif, lihat
+        // TenancyServiceProvider). User runtime tenant tidak punya hak DDL.
+        '--database' => 'tenant_migrator',
         '--path' => [database_path('migrations/tenant')],
         '--realpath' => true,
     ],

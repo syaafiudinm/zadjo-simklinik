@@ -9,8 +9,10 @@ use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\ScopeSessionToTenant;
 use App\Jobs\DeleteTenantDatabase;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantDatabaseGrants;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\URL;
@@ -63,9 +65,17 @@ class TenancyServiceProvider extends ServiceProvider
 
             // Database events
             Events\DatabaseCreated::class => [],
-            Events\DatabaseMigrated::class => [],
+            // Setiap migrasi tenant — saat provisioning maupun deploy — diikuti
+            // sinkronisasi hak user runtime, supaya tabel baru langsung
+            // mendapat hak per tabel yang benar (dan audit_logs tetap
+            // append-only). Lihat App\Support\Tenancy\TenantDatabaseGrants.
+            Events\DatabaseMigrated::class => [
+                fn (Events\DatabaseMigrated $event) => app(TenantDatabaseGrants::class)->sync($event->tenant),
+            ],
             Events\DatabaseSeeded::class => [],
-            Events\DatabaseRolledBack::class => [],
+            Events\DatabaseRolledBack::class => [
+                fn (Events\DatabaseRolledBack $event) => app(TenantDatabaseGrants::class)->sync($event->tenant),
+            ],
             Events\DatabaseDeleted::class => [],
 
             // Tenancy events
@@ -139,6 +149,7 @@ class TenancyServiceProvider extends ServiceProvider
             // permission tenant A tersaji dari cache untuk tenant B.
             config(['permission.cache.key' => 'spatie.permission.cache.tenant.'.$tenant->getTenantKey()]);
 
+            $this->defineMigratorConnection($tenant);
             $this->forgetTenantBoundSingletons();
         });
 
@@ -153,10 +164,36 @@ class TenancyServiceProvider extends ServiceProvider
 
         Event::listen(Events\RevertedToCentralContext::class, function () use ($centralPermissionCacheKey) {
             URL::defaults(['tenant' => null]);
+            DB::purge('tenant_migrator');
+            config(['database.connections.tenant_migrator' => null]);
             config(['permission.cache.key' => $centralPermissionCacheKey]);
 
             $this->forgetTenantBoundSingletons();
         });
+    }
+
+    /**
+     * Koneksi berkredensial admin ke database tenant yang sedang aktif, khusus
+     * untuk migrasi (`tenancy.migration_parameters`). User runtime tenant tidak
+     * punya hak DDL.
+     *
+     * Host dan port diambil dari baris tenant, bukan dari koneksi pusat, supaya
+     * tenant yang dipindah ke server DB lain tetap dimigrasi di server yang
+     * benar. Kredensialnya masih kredensial pusat — kalau server lain itu
+     * punya akun admin berbeda, di sinilah ia perlu dibaca.
+     */
+    protected function defineMigratorConnection(Tenant $tenant): void
+    {
+        $central = config('database.connections.'.config('tenancy.database.central_connection'));
+
+        config(['database.connections.tenant_migrator' => array_merge($central, array_filter([
+            'host' => $tenant->db_host,
+            'port' => $tenant->db_port,
+        ]), [
+            'database' => $tenant->database()->getName(),
+        ])]);
+
+        DB::purge('tenant_migrator');
     }
 
     protected function forgetTenantBoundSingletons(): void

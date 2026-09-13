@@ -6,7 +6,7 @@ interoperabel dengan SATUSEHAT (HL7 FHIR R4).
 
 Dokumen acuan: [Arsitektur](docs/ARCHITECTURE.md) · [PRD](PRD-SIM-Klinik-SaaS.md) · [Sprint 1 — Fondasi](Sprint-1-Fondasi.md)
 
-**Status:** Sprint 1 (Fase F0 — Fondasi). Selesai sampai **S1-06**.
+**Status:** Sprint 1 (Fase F0 — Fondasi). Selesai sampai **S1-08**.
 
 | Task | | |
 |---|---|---|
@@ -16,8 +16,10 @@ Dokumen acuan: [Arsitektur](docs/ARCHITECTURE.md) · [PRD](PRD-SIM-Klinik-SaaS.m
 | S1-04 | Provisioning tenant otomatis | ✅ |
 | S1-05 | Autentikasi tenant-scoped | ✅ |
 | S1-06 | RBAC (role & permission) | ✅ |
-| S1-07 | Audit trail | ⬜ berikutnya |
-| S1-08 … S1-11 | | ⬜ |
+| S1-07 | Audit trail | ✅ |
+| S1-08 | Antrian tenant-aware + Horizon | ✅ |
+| S1-09 | Suite test isolasi tenant | ⬜ berikutnya |
+| S1-10 … S1-11 | | ⬜ |
 
 ---
 
@@ -25,7 +27,7 @@ Dokumen acuan: [Arsitektur](docs/ARCHITECTURE.md) · [PRD](PRD-SIM-Klinik-SaaS.m
 
 Laravel 12 (PHP 8.3+) · Inertia.js · React 19 + TypeScript · Vite · Tailwind CSS v4 ·
 MySQL 8 · Redis · [`stancl/tenancy`](https://tenancyforlaravel.com) (database-per-tenant) ·
-[`spatie/laravel-permission`](https://spatie.be/docs/laravel-permission) · Pest
+[`spatie/laravel-permission`](https://spatie.be/docs/laravel-permission) · Laravel Horizon · Pest
 
 ## Kebutuhan
 
@@ -48,7 +50,7 @@ contoh lewat jalur yang sama dengan `tenant:create`.
 Menjalankan aplikasi:
 
 ```bash
-make dev     # server Laravel :8000 + Vite + worker antrian
+make dev     # server Laravel :8000 + Vite + Horizon (worker antrian)
 ```
 
 | Alamat | Isi |
@@ -58,6 +60,7 @@ make dev     # server Laravel :8000 + Vite + worker antrian
 | <http://klinik-anggrek.simklinik.localhost:8000> | Klinik hanya-baca (banner peringatan) |
 | <http://klinik-kamboja.simklinik.localhost:8000> | Klinik ditangguhkan (halaman penjelasan) |
 | <http://localhost:8025> | Mailpit — email undangan & reset password |
+| <http://admin.simklinik.localhost:8000/horizon> | Horizon — antrian (basic auth, lihat `HORIZON_BASIC_AUTH_*` di `.env`) |
 
 Akun contoh tiap klinik (hanya lingkungan lokal):
 
@@ -73,7 +76,7 @@ php artisan tenant:create klinik-melati "Klinik Melati" admin@melati.id
 php artisan tenant:delete klinik-melati
 ```
 
-`tenant:create` mendaftarkan klinik, lalu worker antrian membuat database dan
+`tenant:create` mendaftarkan klinik, lalu worker di antrian `provisioning` membuat database dan
 **user MySQL khusus** dengan grant hanya ke database itu, menjalankan migrasi,
 menyemai 8 role bawaan + 92 permission + poli default, membuat admin, dan
 mengirim undangan. Admin menetapkan passwordnya sendiri lewat tautan — vendor
@@ -174,7 +177,20 @@ Setiap butir di bawah punya test yang terbukti gagal kalau penambalnya dibuang.
   tenant tidak — sehingga klinik ditangguhkan mengarahkan tamu ke login. Urutan
   kini ditetapkan eksplisit di `TenancyServiceProvider`.
 
-### Menambah permission
+- **Hak DDL user runtime.** MySQL tidak bisa mencabut hak per tabel yang
+  diberikan per database, jadi user MySQL tenant kini hanya memegang hak DML
+  per tabel, dan migrasi berjalan lewat koneksi admin `tenant_migrator`. Hak
+  disinkronkan otomatis setiap `tenants:migrate`; tenant lama ikut dirapikan
+  saat migrasi berikutnya.
+- **`dispatch()` yang lolos dari konteks tenant.** `$tenant->run(fn () => Job::dispatch())`
+  mengembalikan `PendingDispatch` yang baru di-dispatch setelah `run()` selesai —
+  tanpa konteks tenant. Pakai closure berblok. `TenantAwareJob` menolak
+  dispatch dari konteks pusat, jadi kesalahan ini gagal keras.
+- **`retry_after` lebih kecil dari timeout job.** Redis menyerahkan job yang
+  masih berjalan ke worker kedua. Worker kini menolak start kalau invarian ini
+  dilanggar.
+
+## Menambah permission
 
 Semua permission dan peran bawaan hidup di
 [`app/Support/Rbac/PermissionCatalog.php`](app/Support/Rbac/PermissionCatalog.php).
@@ -184,13 +200,49 @@ Setelah mengubahnya, sinkronkan ke semua klinik — peran kustom tidak disentuh:
 php artisan tenants:seed --class='Database\Seeders\RolesAndPermissionsSeeder' --force
 ```
 
+## Audit trail
+
+Setiap perubahan data (`Auditable`), login/logout/gagal masuk, pemberian peran,
+akses ditolak, dan sesi asing yang ditolak tercatat di tabel `audit_logs`
+milik database klinik, dan terlihat di menu **Log Audit** (`audit_log.view`).
+
+- **Append-only di level MySQL.** User runtime hanya memegang `SELECT, INSERT`
+  atas `audit_logs`. `DB::table('audit_logs')->delete()` ditolak database —
+  termasuk lewat tinker.
+- **Akses baca rekam medis** dicatat per rekam medis yang dibuka, dengan
+  middleware `audit.access:<parameter>` di rute detail (bukan rute daftar).
+  Akses berulang oleh orang yang sama dalam 60 detik dicatat sekali.
+- **Data klinis tanpa hard delete.** Model klinis (Sprint 2) mewarisi
+  `App\Models\ClinicalModel`: `delete()` dan hapus massal melempar exception,
+  koreksi lewat `amend($perubahan, $alasan)`. Tabelnya **wajib** didaftarkan
+  tanpa `DELETE` di `config/simklinik.php → database_grants`; test gagal kalau lupa.
+
+## Antrian
+
+Job yang bekerja atas data satu klinik **wajib** mewarisi
+`App\Jobs\TenantAwareJob` dan mengimplementasikan `handleForTenant()`:
+
+```php
+class KirimEncounter extends TenantAwareJob
+{
+    public function __construct(public Encounter $encounter) {}
+
+    public function handleForTenant(SatuSehatClient $client): void { /* … */ }
+}
+```
+
+Tenant pemilik ditangkap otomatis saat dispatch; sebelum `handleForTenant()`
+berjalan, konteks worker diverifikasi sama dengan pemiliknya. Setiap job dari
+dalam klinik mendapat tag `tenant:<slug>` di Horizon. Jangan menaruh token atau
+rahasia di properti job — payload terlihat di dashboard Horizon.
+
 ## Perintah
 
 | | |
 |---|---|
 | `make setup` | Pasang semuanya dari nol |
 | `make up` / `make down` | Nyalakan / matikan MySQL + Redis |
-| `make dev` | Server + Vite + worker antrian |
+| `make dev` | Server + Vite + Horizon |
 | `make test` | Seluruh suite, termasuk isolasi tenant |
 | `make fresh` | Hapus semua tenant, migrasi & seed ulang |
 | `make tenants` | Daftar tenant beserta alamatnya |

@@ -16,7 +16,12 @@ use Stancl\Tenancy\TenantDatabaseManagers\PermissionControlledMySQLDatabaseManag
  * konfigurasi. Isolasi di level MySQL tidak: user `klinik_a` secara fisik
  * tidak punya hak membaca `simklinik_klinik_b`, apa pun yang dilakukan kode.
  *
- * Bedanya dengan manager bawaan paket: penghapusan dibuat idempoten. Bawaan
+ * Bedanya dengan manager bawaan paket:
+ *
+ * 1. User dibuat TANPA grant level database. Hak per tabel diberikan oleh
+ *    TenantDatabaseGrants setelah migrasi — lihat kelas itu untuk alasannya.
+ *
+ * 2. Penghapusan dibuat idempoten. Bawaan
  * menjalankan `DROP DATABASE` (tanpa IF EXISTS) lalu baru `DROP USER`; kalau
  * databasenya sudah tidak ada, query pertama melempar error dan user MySQL
  * yatim tertinggal selamanya. Itu persis kondisi yang terjadi saat rollback
@@ -24,6 +29,16 @@ use Stancl\Tenancy\TenantDatabaseManagers\PermissionControlledMySQLDatabaseManag
  */
 class TenantDatabaseManager extends PermissionControlledMySQLDatabaseManager
 {
+    public function createUser(DatabaseConfig $databaseConfig): bool
+    {
+        $username = $databaseConfig->getUsername();
+        $password = $databaseConfig->getPassword();
+
+        // Password dijamin alfanumerik oleh generator di TenancyServiceProvider;
+        // statement ini tidak mendukung parameter binding.
+        return $this->database()->statement("CREATE USER `{$username}`@`%` IDENTIFIED BY '{$password}'");
+    }
+
     public function deleteDatabase(TenantWithDatabase $tenant): bool
     {
         $name = $tenant->database()->getName();

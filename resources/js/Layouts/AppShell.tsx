@@ -16,6 +16,7 @@ interface NavItem {
 const NAV: NavItem[] = [
     { label: "Beranda", href: "/" },
     { label: "Pengguna", href: "/users", permission: "user.view" },
+    { label: "Log Audit", href: "/audit-logs", permission: "audit_log.view" },
 ];
 
 /**

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Enums\AuditEvent;
+use App\Support\Audit\AuditLogger;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -48,6 +50,11 @@ class ScopeSessionToTenant
             ]);
 
             $session->invalidate();
+
+            app(AuditLogger::class)->record(AuditEvent::SessionRejected, context: [
+                'session_tenant' => $owner,
+                'path' => $request->path(),
+            ]);
         }
 
         $session->put(self::TENANT_KEY, $tenantId);

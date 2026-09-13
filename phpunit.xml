@@ -66,6 +66,18 @@
         <env name="SESSION_DRIVER" value="redis"/>
         <env name="SESSION_CONNECTION" value="cache"/>
 
+        <!--
+            Antrian bawaan tetap `sync`. Test yang membuktikan job berjalan di
+            konteks tenant yang benar memakai koneksi `redis` secara eksplisit
+            dan menjalankan worker sungguhan; antrian dan metrik Horizon-nya
+            diarahkan ke database Redis test yang sama.
+        -->
+        <env name="REDIS_QUEUE_CONNECTION" value="cache"/>
+        <env name="HORIZON_REDIS_CONNECTION" value="cache"/>
+        <env name="HORIZON_PREFIX" value="simklinik_test_horizon:"/>
+        <env name="HORIZON_BASIC_AUTH_USERNAME" value="operator"/>
+        <env name="HORIZON_BASIC_AUTH_PASSWORD" value="rahasia-test"/>
+
         <!-- Domain test sengaja berbeda dari domain dev, untuk membuktikan
              resolusi subdomain memang dibaca dari konfigurasi. -->
         <env name="APP_URL" value="http://simklinik.test"/>

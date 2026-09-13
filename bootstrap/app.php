@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Enums\AuditEvent;
+use App\Http\Middleware\AssignRequestId;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\LogRecordAccess;
+use App\Support\Audit\AuditLogger;
 use App\Support\ForbiddenMessage;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -33,7 +37,9 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware) {
-        $middleware->web(append: [
+        $middleware->web(prepend: [
+            AssignRequestId::class,
+        ], append: [
             HandleInertiaRequests::class,
         ]);
 
@@ -41,6 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
+            'audit.access' => LogRecordAccess::class,
         ]);
 
         // Hanya aplikasi klinik yang punya halaman login. Di domain pusat
@@ -63,6 +70,17 @@ return Application::configure(basePath: dirname(__DIR__))
             // skrip demo sprint, dan halaman error Symfony bukan jawaban yang
             // pantas untuk petugas klinik.
             if ($response->getStatusCode() === 403) {
+                // Percobaan membuka halaman tanpa hak oleh pengguna yang sudah
+                // login dicatat. Tamu tidak: rute tenant mengarahkan tamu ke
+                // login, jadi 403 bagi tamu hanya kebisingan.
+                if (tenancy()->initialized && auth()->guard('web')->hasUser()) {
+                    app(AuditLogger::class)->record(AuditEvent::AccessDenied, context: [
+                        'method' => $request->method(),
+                        'path' => $request->path(),
+                        'route' => $request->route()?->getName(),
+                    ]);
+                }
+
                 return Inertia::render('Errors/Forbidden', [
                     'message' => ForbiddenMessage::for($e),
                 ])->toResponse($request)->setStatusCode(403);

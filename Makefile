@@ -13,7 +13,7 @@ help:
 	@echo "make setup    — pasang dependensi, nyalakan infra, migrasi, seed"
 	@echo "make up       — nyalakan MySQL + Redis"
 	@echo "make down     — matikan infra (data tetap ada di volume)"
-	@echo "make dev      — server Laravel + Vite + worker antrian"
+	@echo "make dev      — server Laravel + Vite + Horizon (worker antrian)"
 	@echo "make test     — jalankan seluruh suite, termasuk isolasi tenant"
 	@echo "make fresh    — hapus semua database tenant, migrasi & seed ulang"
 	@echo "make tenants  — daftar tenant beserta alamatnya"
@@ -21,6 +21,7 @@ help:
 	@echo "Klinik baru:   php artisan tenant:create <slug> \"<nama>\" <email-admin>"
 	@echo "Hapus klinik:  php artisan tenant:delete <slug>   (ekspor otomatis dulu)"
 	@echo "Email lokal:   http://localhost:8025 (Mailpit)"
+	@echo "Antrian:       http://admin.simklinik.localhost:8000/horizon (lihat .env)"
 
 setup: up
 	@test -f .env || cp .env.example .env
@@ -54,9 +55,9 @@ fresh: up
 dev:
 	npx concurrently -c "#93c5fd,#c4b5fd,#fdba74" \
 		"php artisan serve --port=8000" \
-		"php artisan queue:listen --tries=1 --timeout=180" \
+		"php artisan horizon:listen" \
 		"npm run dev" \
-		--names=server,queue,vite --kill-others
+		--names=server,horizon,vite --kill-others
 
 test:
 	php artisan test

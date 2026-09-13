@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Domain;
 use App\Models\Tenant;
+use App\Support\Tenancy\TenantDatabaseManager;
 use App\Support\Tenancy\UuidV7Generator;
 
 return [
@@ -74,10 +75,18 @@ return [
         'prefix' => env('TENANCY_DB_PREFIX', 'simklinik_'),
         'suffix' => env('TENANCY_DB_SUFFIX', ''),
 
+        /**
+         * Awalan user MySQL per tenant. Dibedakan antar environment (test
+         * memakai `skt_`) supaya pembersihan user yatim di suite test tidak
+         * pernah menyentuh user milik lingkungan pengembangan.
+         */
+        'user_prefix' => env('TENANCY_DB_USER_PREFIX', 'sk_'),
+
         'managers' => [
             'sqlite' => Stancl\Tenancy\TenantDatabaseManagers\SQLiteDatabaseManager::class,
-            'mysql' => Stancl\Tenancy\TenantDatabaseManagers\MySQLDatabaseManager::class,
-            'mariadb' => Stancl\Tenancy\TenantDatabaseManagers\MySQLDatabaseManager::class,
+            // User MySQL per tenant dengan grant terbatas ke databasenya sendiri.
+            'mysql' => TenantDatabaseManager::class,
+            'mariadb' => TenantDatabaseManager::class,
             'pgsql' => Stancl\Tenancy\TenantDatabaseManagers\PostgreSQLDatabaseManager::class,
         ],
     ],

@@ -118,6 +118,29 @@ class Tenant extends BaseTenant implements TenantWithDatabase
         return $this->hasMany(TenantSetting::class);
     }
 
+    /**
+     * Nilai konfigurasi per klinik dari tabel `tenant_settings` (database pusat).
+     *
+     * Dimuat sekali per instance model; setiap request mendapat instance tenant
+     * baru dari resolver, jadi tidak ada nilai basi lintas request.
+     */
+    public function setting(string $key, mixed $default = null): mixed
+    {
+        $setting = $this->settings->firstWhere('key', $key);
+
+        return $setting?->value ?? $default;
+    }
+
+    /** FR-M21.6 — menit idle sebelum logout otomatis, dijepit ke batas aman. */
+    public function idleTimeoutMinutes(): int
+    {
+        [$min, $max] = config('simklinik.idle_timeout_bounds');
+
+        $minutes = (int) $this->setting('session.idle_timeout_minutes', config('simklinik.idle_timeout_minutes'));
+
+        return max($min, min($max, $minutes));
+    }
+
     public function isActive(): bool
     {
         return $this->status === TenantStatus::Active;

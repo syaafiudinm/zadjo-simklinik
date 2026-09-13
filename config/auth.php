@@ -97,6 +97,15 @@ return [
             'expire' => 60,
             'throttle' => 60,
         ],
+
+        // Undangan akun baru. Tabel terpisah dari reset password supaya token
+        // reset (60 menit) tidak bisa dipakai lewat jalur undangan (72 jam).
+        'invitations' => [
+            'provider' => 'users',
+            'table' => 'user_invitation_tokens',
+            'expire' => 60 * 72,
+            'throttle' => 0,
+        ],
     ],
 
     /*

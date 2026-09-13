@@ -14,9 +14,10 @@ use Illuminate\Support\Facades\DB;
 | Berkas ini adalah aset paling berharga di repo. Setiap kali ditemukan celah
 | isolasi baru, tambahkan test-nya DI SINI dulu, baru perbaiki kodenya.
 |
-| Yang sudah tercakup di S1-03: isolasi database, isolasi cache, dan isolasi
-| direktori berkas. Yang menyusul di S1-09: isolasi sesi (S1-05), konteks tenant
-| pada job antrian (S1-08), dan pemasangan migrasi baru ke semua tenant.
+| Tercakup: isolasi database (aplikasi dan grant MySQL), cache, direktori
+| berkas, sesi, rate limit login, dan cache permission. Menyusul di S1-09:
+| konteks tenant pada job antrian (S1-08) dan pemasangan migrasi baru ke semua
+| tenant.
 |
 */
 
@@ -33,14 +34,17 @@ it('tidak menampilkan baris tenant lain dari konteks tenant manapun', function (
         User::factory()->create(['email' => 'apoteker@klinik-b.test']);
     });
 
+    // Setiap tenant sudah punya satu admin dari provisioning.
     $a->run(function () {
-        expect(User::count())->toBe(1)
-            ->and(User::where('email', 'perawat@klinik-b.test')->exists())->toBeFalse();
+        expect(User::count())->toBe(2)
+            ->and(User::where('email', 'perawat@klinik-b.test')->exists())->toBeFalse()
+            ->and(User::where('email', 'admin@klinik-b.test')->exists())->toBeFalse();
     });
 
     $b->run(function () {
-        expect(User::count())->toBe(2)
-            ->and(User::where('email', 'perawat@klinik-a.test')->exists())->toBeFalse();
+        expect(User::count())->toBe(3)
+            ->and(User::where('email', 'perawat@klinik-a.test')->exists())->toBeFalse()
+            ->and(User::where('email', 'admin@klinik-a.test')->exists())->toBeFalse();
     });
 });
 
@@ -54,8 +58,8 @@ it('mengizinkan email yang sama di dua klinik berbeda', function () {
     $a->run(fn () => User::factory()->create(['email' => 'dr.aditya@contoh.test']));
     $b->run(fn () => User::factory()->create(['email' => 'dr.aditya@contoh.test']));
 
-    $a->run(fn () => expect(User::count())->toBe(1));
-    $b->run(fn () => expect(User::count())->toBe(1));
+    $a->run(fn () => expect(User::where('email', 'dr.aditya@contoh.test')->count())->toBe(1));
+    $b->run(fn () => expect(User::where('email', 'dr.aditya@contoh.test')->count())->toBe(1));
 });
 
 it('memberi setiap tenant database fisik yang berbeda', function () {

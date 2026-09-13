@@ -24,7 +24,6 @@
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
-        <env name="SESSION_DRIVER" value="array"/>
 
         <!--
             Test isolasi tenant memakai MySQL sungguhan, bukan SQLite in-memory.
@@ -42,6 +41,7 @@
         <!-- Prefix terpisah supaya pembersihan test tidak pernah menyentuh
              database tenant milik lingkungan pengembangan. -->
         <env name="TENANCY_DB_PREFIX" value="simklinik_test_"/>
+        <env name="TENANCY_DB_USER_PREFIX" value="skt_"/>
 
         <!--
             Cache memakai Redis sungguhan, bukan driver `array`. Driver array
@@ -56,6 +56,15 @@
         <env name="REDIS_HOST" value="127.0.0.1"/>
         <env name="REDIS_PORT" value="6379"/>
         <env name="REDIS_CACHE_DB" value="15"/>
+
+        <!--
+            Sesi juga di Redis sungguhan (database 15 lewat koneksi `cache`).
+            Test isolasi sesi memutar ulang cookie tenant A ke tenant B; dengan
+            driver `array` sesi tidak bertahan antar request dan test itu akan
+            lolos karena alasan yang salah.
+        -->
+        <env name="SESSION_DRIVER" value="redis"/>
+        <env name="SESSION_CONNECTION" value="cache"/>
 
         <!-- Domain test sengaja berbeda dari domain dev, untuk membuktikan
              resolusi subdomain memang dibaca dari konfigurasi. -->

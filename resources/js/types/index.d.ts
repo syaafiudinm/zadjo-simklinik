@@ -16,6 +16,12 @@ export interface TenantSummary {
     status: TenantStatus;
     statusLabel: string;
     readOnly: boolean;
+    idleTimeoutMinutes: number;
+}
+
+export interface RoleSummary {
+    name: string;
+    label: string;
 }
 
 /**
@@ -27,10 +33,18 @@ export interface TenantSummary {
  */
 export interface SharedProps {
     [key: string]: unknown;
-
     appName: string;
-    auth: { user: User | null };
+    auth: {
+        user: User | null;
+        /** Hanya untuk menyembunyikan menu. Server tetap memeriksa setiap aksi. */
+        permissions: string[];
+        roles: RoleSummary[];
+    };
     /** null saat berada di konteks pusat, terisi saat di dalam subdomain klinik. */
     tenant: TenantSummary | null;
-    flash: { success: string | null; error: string | null };
+    flash: {
+        status: string | null;
+        success: string | null;
+        error: string | null;
+    };
 }

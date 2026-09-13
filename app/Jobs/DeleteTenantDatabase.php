@@ -13,17 +13,13 @@ use Stancl\Tenancy\Contracts\TenantWithDatabase;
 use Stancl\Tenancy\Jobs\DeleteDatabase;
 
 /**
- * Menghapus database tenant, tapi hanya kalau memang pernah dibuat.
+ * Menghapus database dan user MySQL tenant saat model Tenant dihapus.
  *
- * `Jobs\DeleteDatabase` bawaan paket langsung menjalankan `DROP DATABASE` dan
- * gagal dengan error 1008 kalau databasenya tidak ada. Itu justru kondisi yang
- * paling mungkin terjadi saat kita paling membutuhkan penghapusan berjalan
- * mulus: rollback provisioning yang gagal SEBELUM database sempat dibuat
- * (S1-04). Kegagalan di jalur rollback meninggalkan tenant setengah jadi —
- * persis yang ingin dicegah.
- *
- * Konvensi flag `create_database => false` diambil dari paket: `Jobs\CreateDatabase`
- * memakai flag yang sama untuk melewatkan pembuatan database.
+ * Penghapusannya sendiri idempoten (lihat App\Support\Tenancy\TenantDatabaseManager).
+ * Job ini hanya menambahkan satu aturan: tenant yang ditandai
+ * `create_database => false` memang tidak pernah punya database, jadi tidak
+ * ada yang perlu disentuh. Konvensi flag itu diambil dari paket —
+ * `Jobs\CreateDatabase` memakai flag yang sama untuk melewatkan pembuatan.
  */
 class DeleteTenantDatabase implements ShouldQueue
 {

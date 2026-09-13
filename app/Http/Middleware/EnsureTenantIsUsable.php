@@ -23,6 +23,21 @@ class EnsureTenantIsUsable
     /** Metode HTTP yang dianggap mengubah data. */
     private const WRITE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 
+    /**
+     * Rute tulis yang tetap diizinkan dalam mode hanya-baca.
+     *
+     * Semuanya soal MASUK ke sistem. Memblokir login di klinik hanya-baca
+     * berarti rekam medis tidak terbaca sama sekali — persis yang dilarang
+     * FR-M23.4, hanya lewat pintu belakang.
+     */
+    private const WRITES_ALLOWED_WHEN_READ_ONLY = [
+        'login.store',
+        'logout',
+        'password.email',
+        'password.store',
+        'invitation.store',
+    ];
+
     public function handle(Request $request, Closure $next): Response
     {
         // Rute tenant dicocokkan lewat pola domain `{tenant}.<domain-pusat>`,
@@ -51,7 +66,9 @@ class EnsureTenantIsUsable
             ]);
         }
 
-        if (! $tenant->status->allowsWrites() && in_array($request->method(), self::WRITE_METHODS, true)) {
+        if (! $tenant->status->allowsWrites()
+            && in_array($request->method(), self::WRITE_METHODS, true)
+            && ! in_array($request->route()?->getName(), self::WRITES_ALLOWED_WHEN_READ_ONLY, true)) {
             abort(403, 'Klinik ini sedang berstatus hanya-baca. Data lama tetap dapat dibuka, tetapi perubahan baru tidak dapat disimpan.');
         }
 

@@ -17,11 +17,19 @@ use Stancl\Tenancy\Middleware\InitializeTenancyBySubdomain;
 it('melayani subdomain tenant dengan aplikasi klinik', function () {
     $tenant = $this->createTenant('klinik-melati');
 
-    $this->get($this->tenantUrl($tenant))
+    $this->actingAs($this->adminOf($tenant))
+        ->get($this->tenantUrl($tenant))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page) => $page
             ->component('Tenant/Dashboard')
             ->where('tenant.slug', 'klinik-melati'));
+});
+
+it('mengarahkan tamu ke halaman login di subdomain klinik yang sama', function () {
+    $tenant = $this->createTenant('klinik-melati');
+
+    $this->get($this->tenantUrl($tenant))
+        ->assertRedirect($this->tenantUrl($tenant, '/login'));
 });
 
 it('melayani domain pusat dengan aplikasi vendor', function () {
@@ -77,7 +85,16 @@ it('menolak host yang bukan domain pusat maupun subdomain tenant', function () {
 it('menampilkan halaman penjelasan untuk tenant yang ditangguhkan', function () {
     $tenant = $this->createTenant('klinik-kamboja', ['status' => TenantStatus::Suspended]);
 
+    // Tamu tidak diarahkan ke login dulu: status tenant dievaluasi sebelum
+    // autentikasi. Lihat urutan prioritas di TenancyServiceProvider.
     $this->get($this->tenantUrl($tenant))
+        ->assertForbidden()
+        ->assertInertia(fn (AssertableInertia $page) => $page->component('Errors/TenantSuspended'));
+
+    // Pengguna yang sudah login pun tetap tertahan.
+    $this->freshProcess();
+    $this->actingAs($this->adminOf($tenant))
+        ->get($this->tenantUrl($tenant, '/users'))
         ->assertForbidden()
         ->assertInertia(fn (AssertableInertia $page) => $page->component('Errors/TenantSuspended'));
 });
@@ -98,16 +115,26 @@ it('mengizinkan baca tapi memblokir tulis pada tenant hanya-baca', function () {
 
     $tenant = $this->createTenant('klinik-anggrek', ['status' => TenantStatus::ReadOnly]);
 
-    $this->get($this->tenantUrl($tenant))->assertOk();
+    $this->actingAs($this->adminOf($tenant))
+        ->get($this->tenantUrl($tenant))
+        ->assertOk();
 
-    $this->post($this->tenantUrl($tenant, '/uji-tulis'))->assertForbidden();
+    $this->post($this->tenantUrl($tenant, '/uji-tulis'))
+        ->assertForbidden()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('Errors/Forbidden')
+            ->where('message', fn (string $message) => str_contains($message, 'hanya-baca')));
 });
 
 it('menandai mode hanya-baca lewat props bersama, bukan per halaman', function () {
     $tenant = $this->createTenant('klinik-anggrek', ['status' => TenantStatus::ReadOnly]);
 
-    $this->get($this->tenantUrl($tenant))
-        ->assertInertia(fn (AssertableInertia $page) => $page->where('tenant.readOnly', true));
+    // Halaman login pun menerima penanda ini — tanpa satu baris pun di
+    // controller login yang mengirimkannya.
+    $this->get($this->tenantUrl($tenant, '/login'))
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('Auth/Login')
+            ->where('tenant.readOnly', true));
 });
 
 it('tidak membocorkan parameter rute subdomain ke argumen controller', function () {

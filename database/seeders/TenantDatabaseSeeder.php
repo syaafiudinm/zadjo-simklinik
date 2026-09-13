@@ -4,29 +4,22 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
-use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 
 /**
- * Seeder yang dijalankan DI DALAM database tenant.
+ * Data awal yang dijalankan DI DALAM database setiap tenant baru.
  *
- * Dipanggil per tenant oleh `php artisan tenants:seed`. Role, permission, dan
- * poli default menyusul di S1-04/S1-06; untuk sekarang cukup satu akun admin
- * supaya subdomain tenant bisa dibuka dan diperiksa.
+ * Tidak membuat akun apa pun: admin pertama dibuat oleh
+ * App\Services\Tenancy\TenantProvisioner dengan email yang benar dan
+ * undangan, bukan akun contoh berpassword tebakan.
  */
 class TenantDatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        $tenant = tenant();
-
-        User::firstOrCreate(
-            ['email' => 'admin@'.($tenant?->slug ?? 'tenant').'.test'],
-            [
-                'name' => 'Admin '.($tenant?->name ?? 'Klinik'),
-                'password' => Hash::make('password'),
-            ]
-        );
+        $this->call([
+            RolesAndPermissionsSeeder::class,
+            PolyclinicSeeder::class,
+        ]);
     }
 }

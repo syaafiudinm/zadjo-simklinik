@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\DB;
  * migrasi tenant selesai (lihat TenancyServiceProvider) supaya tabel baru
  * langsung mendapat hak yang benar.
  *
- * Dijalankan lewat koneksi pusat, yang punya hak GRANT.
+ * Dijalankan lewat koneksi `tenancy_admin`, satu-satunya yang punya hak GRANT.
  */
 final class TenantDatabaseGrants
 {
@@ -35,7 +35,7 @@ final class TenantDatabaseGrants
         }
 
         $database = $tenant->database()->getName();
-        $connection = DB::connection(config('tenancy.database.central_connection'));
+        $connection = DB::connection(config('tenancy.database.admin_connection'));
         $grantee = "'{$user}'@'%'";
         $account = $this->quote($user).'@`%`';
 

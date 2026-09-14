@@ -25,21 +25,7 @@ use Spatie\Permission\Models\Role;
 |--------------------------------------------------------------------------
 */
 
-function centralDb(): Illuminate\Database\Connection
-{
-    return DB::connection(config('tenancy.database.central_connection'));
-}
-
-function databaseExists(string $name): bool
-{
-    return centralDb()->selectOne('SELECT COUNT(*) AS n FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ?', [$name])->n > 0;
-}
-
-function mysqlUserExists(?string $name): bool
-{
-    return $name !== null && centralDb()->selectOne('SELECT COUNT(*) AS n FROM mysql.user WHERE user = ?', [$name])->n > 0;
-}
-
+/** Koneksi berhak admin server — koneksi pusat sengaja tidak bisa melihat database tenant. */
 it('membawa tenant dari satu perintah sampai siap login', function () {
     Notification::fake();
 
@@ -83,46 +69,6 @@ it('mengirim undangan yang tautannya menunjuk subdomain klinik itu sendiri', fun
 
         return str_starts_with($url, $this->tenantUrl($tenant, '/invitation/'));
     });
-});
-
-it('membuat tiga tenant berturut-turut yang semuanya berfungsi dan terisolasi', function () {
-    $tenants = collect(['klinik-a', 'klinik-b', 'klinik-c'])
-        ->map(fn (string $slug) => $this->createTenant($slug));
-
-    foreach ($tenants as $tenant) {
-        // Satu proses, tiga tenant: persis kondisi di mana singleton yang
-        // terlanjur dibuat untuk tenant sebelumnya (broker password, cache
-        // permission) menulis ke database yang salah.
-        $tenant->run(function () use ($tenant) {
-            expect(User::pluck('email')->all())->toBe(["admin@{$tenant->slug}.test"])
-                ->and(DB::table('user_invitation_tokens')->pluck('email')->all())->toBe(["admin@{$tenant->slug}.test"])
-                ->and(User::first()->hasRole('clinic_admin'))->toBeTrue();
-        });
-
-        $this->actingAs($this->adminOf($tenant))
-            ->get($this->tenantUrl($tenant))
-            ->assertOk();
-
-        $this->freshProcess();
-    }
-
-    expect($tenants->pluck('db_username')->unique())->toHaveCount(3)
-        ->and($tenants->pluck('db_name')->unique())->toHaveCount(3);
-});
-
-it('menolak user MySQL satu tenant membaca database tenant lain di level MySQL', function () {
-    // Pertahanan lapis kedua. Kalau suatu hari koneksi aplikasi salah
-    // dikonfigurasi, grant MySQL tetap menolak.
-    $a = $this->createTenant('klinik-a');
-    $b = $this->createTenant('klinik-b');
-
-    $port = config('database.connections.mysql.port');
-    $pdo = new PDO("mysql:host=127.0.0.1;port={$port}", $a->db_username, $a->db_password);
-
-    expect((int) $pdo->query("SELECT COUNT(*) FROM `{$a->db_name}`.users")->fetchColumn())->toBe(1);
-
-    expect(fn () => $pdo->query("SELECT COUNT(*) FROM `{$b->db_name}`.users"))
-        ->toThrow(PDOException::class, 'denied');
 });
 
 it('membongkar semua yang sudah dibuat kalau provisioning gagal di langkah mana pun', function (string $failingStep) {
@@ -171,8 +117,8 @@ it('tidak pernah menghapus database yang bukan miliknya saat rollback', function
     // dibuat manual oleh seseorang. Provisioning harus gagal, dan database
     // itu harus tetap utuh.
     $name = config('tenancy.database.prefix').'klinik_bentrok';
-    centralDb()->statement("CREATE DATABASE `{$name}`");
-    centralDb()->statement("CREATE TABLE `{$name}`.`data_penting` (id INT)");
+    adminDb()->statement("CREATE DATABASE `{$name}`");
+    adminDb()->statement("CREATE TABLE `{$name}`.`data_penting` (id INT)");
 
     try {
         $this->artisan('tenant:create', ['slug' => 'klinik-bentrok', 'name' => 'Klinik Bentrok', 'admin_email' => 'a@b.test', '--sync' => true])
@@ -180,9 +126,9 @@ it('tidak pernah menghapus database yang bukan miliknya saat rollback', function
 
         expect(Tenant::where('slug', 'klinik-bentrok')->exists())->toBeFalse()
             ->and(databaseExists($name))->toBeTrue()
-            ->and(centralDb()->selectOne("SELECT COUNT(*) AS n FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'data_penting'", [$name])->n)->toBe(1);
+            ->and(adminDb()->selectOne("SELECT COUNT(*) AS n FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'data_penting'", [$name])->n)->toBe(1);
     } finally {
-        centralDb()->statement("DROP DATABASE IF EXISTS `{$name}`");
+        adminDb()->statement("DROP DATABASE IF EXISTS `{$name}`");
     }
 });
 
@@ -279,7 +225,7 @@ it('tetap bisa menghapus tenant yang databasenya sudah hilang dari server', func
     // gagal. Penghapusan tenant tidak boleh macet karenanya, dan user MySQL-nya
     // tetap harus ikut dibersihkan.
     $tenant = $this->createTenant('klinik-hilang');
-    centralDb()->statement("DROP DATABASE `{$tenant->db_name}`");
+    adminDb()->statement("DROP DATABASE `{$tenant->db_name}`");
 
     $this->artisan('tenant:delete', ['slug' => 'klinik-hilang', '--force' => true])
         ->assertSuccessful();

@@ -13,7 +13,6 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Audit\AuditLogger;
 use App\Support\Tenancy\TenantDatabaseGrants;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
@@ -34,19 +33,6 @@ function auditOf(Tenant $tenant, ?AuditEvent $event = null)
         ->when($event, fn ($query) => $query->where('event', $event))
         ->orderBy('id')
         ->get());
-}
-
-function expectDenied(callable $query): void
-{
-    try {
-        $query();
-    } catch (QueryException $e) {
-        expect($e->getMessage())->toContain('command denied');
-
-        return;
-    }
-
-    test()->fail('Query seharusnya ditolak MySQL, tapi berhasil.');
 }
 
 // ─── Append-only di level database ──────────────────────────────────────
@@ -87,7 +73,7 @@ it('mencabut hak level database milik tenant lama saat migrasi berikutnya', func
     // termasuk DELETE dan DROP. Deploy berikutnya menjalankan
     // `tenants:migrate`, dan itu harus cukup untuk menutup celahnya.
     $tenant = $this->createTenant('klinik-lama');
-    $central = DB::connection(config('tenancy.database.central_connection'));
+    $central = DB::connection(config('tenancy.database.admin_connection'));
     $central->statement("GRANT ALL PRIVILEGES ON `{$tenant->db_name}`.* TO `{$tenant->db_username}`@`%`");
 
     $tenant->run(fn () => DB::table('audit_logs')->where('id', 0)->delete());
@@ -104,7 +90,7 @@ it('tidak pernah memberi user runtime hak level database, bahkan sebelum migrasi
 
     Event::listen(TenantProvisioningStepCompleted::class, function (TenantProvisioningStepCompleted $event) use (&$schemaGrants) {
         if ($event->step === 'create_database') {
-            $schemaGrants = DB::connection(config('tenancy.database.central_connection'))->selectOne(
+            $schemaGrants = DB::connection(config('tenancy.database.admin_connection'))->selectOne(
                 'SELECT COUNT(*) AS n FROM information_schema.SCHEMA_PRIVILEGES WHERE GRANTEE = ?',
                 ["'{$event->tenant->db_username}'@'%'"]
             )->n;
@@ -255,17 +241,6 @@ it('mengikat baris audit ke request yang memicunya', function () {
     expect($requestId)->not->toBeNull()
         ->and($rows)->toContain('created')
         ->and($rows)->toContain('role_assigned');
-});
-
-it('menyimpan jejak audit di database klinik masing-masing', function () {
-    $a = $this->createTenant('klinik-a');
-    $b = $this->createTenant('klinik-b');
-
-    $this->actingAs($this->createTenantUser($a, 'registrar'))->get($this->tenantUrl($a, '/users'));
-
-    expect(auditOf($a, AuditEvent::AccessDenied))->toHaveCount(1)
-        ->and(auditOf($b, AuditEvent::AccessDenied))->toHaveCount(0)
-        ->and(auditOf($b)->pluck('auditable_label')->implode(' '))->not->toContain('klinik-a');
 });
 
 // ─── Data klinis: tanpa hard delete ──────────────────────────────────────

@@ -14,3 +14,5 @@ declare(strict_types=1);
 */
 
 pest()->extend(Tests\TestCase::class)->in('Feature');
+
+require_once __DIR__.'/Support/helpers.php';

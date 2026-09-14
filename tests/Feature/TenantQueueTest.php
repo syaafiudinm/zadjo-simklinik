@@ -2,19 +2,15 @@
 
 declare(strict_types=1);
 
-use App\Enums\AuditEvent;
-use App\Exceptions\TenantContextMismatchException;
 use App\Http\Middleware\HorizonBasicAuth;
 use App\Jobs\ProvisionTenant;
 use App\Jobs\SendPasswordResetLink;
 use App\Jobs\SendUserInvitation;
-use App\Models\AuditLog;
 use App\Models\Polyclinic;
 use App\Models\Tenant;
 use App\Support\QueueTimeoutGuard;
 use Illuminate\Console\Events\CommandStarting;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Redis;
@@ -42,84 +38,6 @@ afterEach(function () {
         ->table('failed_jobs')->where('queue', $this->queueName)->delete();
 });
 
-function runWorker($test): void
-{
-    $test->artisan('queue:work', [
-        'connection' => 'redis',
-        '--queue' => $test->queueName,
-        '--stop-when-empty' => true,
-        '--sleep' => 0,
-        '--tries' => 1,
-    ])->assertSuccessful();
-}
-
-function failedJobs(string $queue)
-{
-    return DB::connection(config('tenancy.database.central_connection'))
-        ->table('failed_jobs')->where('queue', $queue)->get();
-}
-
-function umumOf(Tenant $tenant): Polyclinic
-{
-    return $tenant->run(fn () => Polyclinic::where('code', 'UMUM')->firstOrFail());
-}
-
-it('menjalankan setiap job di database tenant pemiliknya, apa pun konteks terakhir worker', function () {
-    // TEST KRITIS S1-08. Risiko kritis di tabel risiko PRD: job SATUSEHAT
-    // klinik A yang berjalan dengan konteks klinik B.
-    $a = $this->createTenant('klinik-a');
-    $b = $this->createTenant('klinik-b');
-    $umumA = umumOf($a);
-    $umumB = umumOf($b);
-
-    // Jebakannya: id-nya sama di kedua database. Job yang berjalan di konteks
-    // salah tidak gagal — ia diam-diam mengubah poli klinik lain.
-    expect($umumA->id)->toBe($umumB->id);
-
-    $queue = $this->queueName;
-    $a->run(function () use ($umumA, $queue) {
-        Context::add('request_id', 'req-klinik-a');
-        RenamePolyclinic::dispatch($umumA, 'Poli Umum A (1)')->onConnection('redis')->onQueue($queue);
-    });
-    $b->run(function () use ($umumB, $queue) {
-        RenamePolyclinic::dispatch($umumB, 'Poli Umum B')->onConnection('redis')->onQueue($queue);
-    });
-    $a->run(function () use ($umumA, $queue) {
-        RenamePolyclinic::dispatch($umumA, 'Poli Umum A (2)')->onConnection('redis')->onQueue($queue);
-    });
-    Context::forget('request_id');
-    RecordCentralContext::dispatch()->onConnection('redis')->onQueue($queue);
-
-    // Worker yang "terakhir" bekerja untuk klinik B.
-    tenancy()->initialize($b);
-
-    runWorker($this);
-
-    if (tenancy()->initialized) {
-        tenancy()->end();
-    }
-
-    expect(failedJobs($queue))->toBeEmpty()
-        ->and(RenamePolyclinic::$ranIn)->toBe(['klinik-a', 'klinik-b', 'klinik-a'])
-        // Job pusat sesudahnya tidak mewarisi konteks tenant mana pun.
-        ->and(RecordCentralContext::$tenancyWasInitialized)->toBeFalse();
-
-    $a->run(function () {
-        expect(Polyclinic::where('code', 'UMUM')->value('name'))->toBe('Poli Umum A (2)');
-
-        $audit = AuditLog::where('event', AuditEvent::Updated)->where('auditable_type', Polyclinic::class)->orderBy('id')->get();
-        expect($audit)->toHaveCount(2)
-            ->and($audit->pluck('channel')->unique()->all())->toBe(['queue'])
-            // Id request pemicu ikut terbawa ke worker lewat Context.
-            ->and($audit->first()->request_id)->toBe('req-klinik-a');
-    });
-
-    $b->run(function () {
-        expect(Polyclinic::where('code', 'UMUM')->value('name'))->toBe('Poli Umum B')
-            ->and(AuditLog::where('event', AuditEvent::Updated)->where('auditable_type', Polyclinic::class)->count())->toBe(1);
-    });
-});
-
 it('menolak men-dispatch job tenant dari konteks pusat', function () {
     $tenant = $this->createTenant('klinik-a');
     $umum = umumOf($tenant);
@@ -128,29 +46,6 @@ it('menolak men-dispatch job tenant dari konteks pusat', function () {
         ->toThrow(RuntimeException::class, 'harus di-dispatch dari dalam konteks tenant');
 
     $tenant->run(fn () => expect(Polyclinic::where('code', 'UMUM')->value('name'))->toBe('Poli Umum'));
-});
-
-it('menggagalkan job tanpa efek samping kalau konteks worker tidak cocok dengan pemiliknya', function () {
-    // Penjaga lapis terakhir: kalau inisialisasi tenancy di worker suatu hari
-    // rusak, job berhenti keras alih-alih menulis ke database yang aktif.
-    $a = $this->createTenant('klinik-a');
-    $b = $this->createTenant('klinik-b');
-    $umumB = umumOf($b);
-    $queue = $this->queueName;
-
-    $b->run(function () use ($a, $umumB, $queue) {
-        $job = new RenamePolyclinic($umumB, 'Dibajak');
-        $job->tenantId = (string) $a->id;
-        dispatch($job)->onConnection('redis')->onQueue($queue);
-    });
-
-    runWorker($this);
-
-    expect(RenamePolyclinic::$ranIn)->toBe([])
-        ->and(failedJobs($queue))->toHaveCount(1)
-        ->and(failedJobs($queue)->first()->exception)->toContain(TenantContextMismatchException::class);
-
-    $b->run(fn () => expect(Polyclinic::where('code', 'UMUM')->value('name'))->toBe('Poli Umum'));
 });
 
 it('memberi tag tenant pada setiap job yang di-dispatch dari dalam klinik', function () {

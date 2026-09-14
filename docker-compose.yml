@@ -14,8 +14,9 @@ services:
     ports:
       - "${DOCKER_MYSQL_PORT:-3307}:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: "${DB_PASSWORD:-secret}"
-      MYSQL_DATABASE: "${DB_DATABASE:-simklinik_central}"
+      # Root = kredensial `tenancy_admin`. Koneksi pusat aplikasi memakai user
+      # terbatas yang dibuat oleh `make db-users` (docker/mysql/central-user.sql).
+      MYSQL_ROOT_PASSWORD: "${TENANCY_ADMIN_DB_PASSWORD:-secret}"
       MYSQL_ROOT_HOST: "%"
     command:
       # Provisioning tenant (S1-04) membuat database + user MySQL saat runtime,
@@ -27,7 +28,7 @@ services:
     volumes:
       - simklinik-mysql:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${DB_PASSWORD:-secret}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-p${TENANCY_ADMIN_DB_PASSWORD:-secret}"]
       interval: 5s
       timeout: 5s
       retries: 20

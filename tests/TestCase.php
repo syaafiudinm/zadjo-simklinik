@@ -154,7 +154,8 @@ abstract class TestCase extends BaseTestCase
             return;
         }
 
-        $central = DB::connection(config('tenancy.database.central_connection'));
+        // Hak admin server: koneksi pusat tidak bisa melihat database tenant.
+        $central = DB::connection(config('tenancy.database.admin_connection'));
         $like = fn (string $prefix) => str_replace('_', '\\_', $prefix).'%';
 
         foreach ($central->select('SELECT SCHEMA_NAME AS name FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME LIKE ?', [$like($dbPrefix)]) as $row) {

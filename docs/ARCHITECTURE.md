@@ -1,7 +1,7 @@
 # Arsitektur Sistem — SIMKlinik
 
 > Dokumen ini menggambarkan arsitektur **sebagaimana sudah dibangun** sampai
-> Sprint 1 task S1-08. Bagian yang masih rencana ditandai **⏳ Belum dibangun**
+> Sprint 1 task S1-09. Bagian yang masih rencana ditandai **⏳ Belum dibangun**
 > dan merujuk ke [PRD](../PRD-SIM-Klinik-SaaS.md) atau
 > [Sprint 1](../Sprint-1-Fondasi.md).
 >
@@ -113,14 +113,15 @@ flowchart LR
 flowchart TB
     L1["<b>Lapis 1 — Routing</b><br/>Rute tenant hanya cocok di pola domain {tenant}.&lt;domain&gt;.<br/>Rute pusat dijaga PreventAccessFromTenantDomains."]
     L2["<b>Lapis 2 — Koneksi aplikasi</b><br/>DatabaseTenancyBootstrapper mengganti koneksi default<br/>ke database tenant yang teridentifikasi."]
-    L3["<b>Lapis 3 — Grant MySQL</b><br/>Koneksi tenant login sebagai user MySQL khusus<br/>dengan hak DML per tabel di databasenya sendiri, tanpa DDL."]
+    L3["<b>Lapis 3 — Grant MySQL</b><br/>Koneksi tenant login sebagai user MySQL khusus<br/>dengan hak DML per tabel di databasenya sendiri, tanpa DDL.<br/>Koneksi pusat login sebagai user yang hanya berhak atas database pusat."]
     L1 --> L2 --> L3
 ```
 
 Lapis 3 tetap menahan meskipun lapis 1 dan 2 salah konfigurasi: user MySQL
 klinik A **ditolak oleh MySQL** saat membaca database klinik B. Hal ini diuji di
 `TenantProvisioningTest`. Lapis yang sama membuat `audit_logs` append-only dan
-data klinis tidak bisa di-hard-delete, bahkan lewat query mentah (§7.3).
+data klinis tidak bisa di-hard-delete, bahkan lewat query mentah (§7.3), serta
+membuat koneksi pusat tidak bisa menjangkau tabel klinis (§7.3).
 
 ### 4.2 Yang dibuat tenant-aware
 
@@ -379,13 +380,34 @@ pernah menyentuhnya, karena Laravel tidak memindai subfolder.
 
 MySQL **tidak bisa** mencabut hak di level tabel yang diberikan di level
 database. Selama user runtime memegang `DELETE ON db.*`, perintah
-`REVOKE DELETE ON db.audit_logs` ditolak. Karena itu setiap tenant punya dua
-cara masuk ke databasenya:
+`REVOKE DELETE ON db.audit_logs` ditolak. Karena itu aplikasi memakai empat
+koneksi dengan kredensial berbeda:
 
 | Koneksi | Kredensial | Hak | Dipakai untuk |
 |---|---|---|---|
-| `tenant` | user MySQL tenant (`sk_…`) | DML **per tabel**, tanpa DDL | Semua kode aplikasi, seeder, worker |
-| `tenant_migrator` | admin pusat | Penuh | `tenants:migrate` / `tenants:rollback` saja |
+| `mysql` (pusat) | `DB_USERNAME` (`simklinik`) | Penuh, **hanya** atas database pusat | Registry tenant, landing, panel vendor, antrian gagal |
+| `tenant` | user MySQL tenant (`sk_…`) | DML **per tabel**, tanpa DDL | Semua kode di dalam klinik, seeder, worker |
+| `tenancy_admin` | `TENANCY_ADMIN_DB_*` (root) | Admin server | `CREATE DATABASE/USER`, `GRANT`, `DROP`; template koneksi tenant |
+| `tenant_migrator` | sama dengan `tenancy_admin`, database tenant aktif | Penuh | `tenants:migrate` / `tenants:rollback` saja |
+
+Konsekuensi yang dijaga suite isolasi:
+
+- **Koneksi pusat tidak bisa membaca tabel klinis**, termasuk lewat nama
+  berkualifikasi (`SELECT * FROM simklinik_klinik_a.users` → 1142). Kode pusat
+  secara struktural tidak bisa membaca rekam medis (PRD §4.2). Sebelum S1-09
+  koneksi pusat login sebagai root dan query itu **berhasil**.
+- **Koneksi tenant tidak pernah jatuh ke kredensial admin.** Template koneksi
+  tenant adalah `tenancy_admin`; tenant tanpa `db_username`/`db_password` ditolak
+  (`TenantDatabaseConfig::connection()`), bukan diam-diam berjalan sebagai root.
+
+User pusat dibuat oleh `make db-users` / langkah CI dari
+`docker/mysql/central-user.sql` (idempoten).
+
+> **Batas yang perlu diketahui:** kredensial `tenancy_admin` tetap berada di
+> environment proses yang sama dengan web. Pemisahan ini menutup akses tidak
+> sengaja dan query pusat yang salah arah, tetapi eksekusi kode arbitrer di
+> server tetap bisa membaca kredensial admin. Memisahkan environment web dan
+> worker provisioning adalah pekerjaan deploy (§20).
 
 Kebijakan hak ada di `config/simklinik.php → database_grants`:
 
@@ -849,6 +871,7 @@ tertinggal sebelum job pusat berjalan.
 | Ancaman | Kontrol |
 |---|---|
 | Membaca data klinik lain | Database terpisah + grant MySQL per tenant + pemisahan rute |
+| Kode pusat / panel vendor membaca rekam medis | Koneksi pusat login sebagai user tanpa hak atas database klinik |
 | Pencurian cookie lintas klinik | Cookie terikat host + `ScopeSessionToTenant` membakar sesi asing |
 | Kredensial database bocor lewat dump | `db_password` terenkripsi dengan `APP_KEY` (di environment, bukan database) |
 | Brute force login | Throttle per (tenant, email, IP) |
@@ -926,13 +949,53 @@ Aturan:
 | `tests/Unit/PermissionCatalogTest.php` | Integritas katalog |
 | `tests/Feature/CentralSchemaTest.php` | Enkripsi kredensial, UUID v7, penamaan DB |
 | `tests/Feature/TenantRoutingTest.php` | Pemisahan rute, status tenant, 404 |
-| `tests/Feature/TenantIsolationTest.php` | **Aset paling berharga.** Isolasi DB, cache, filesystem, konteks |
+| `tests/Feature/TenantIsolationTest.php` | **Aset paling berharga — gerbang CI** (grup `isolation`). Tujuh butir S1-09 + celah yang pernah ditemukan (§16.1) |
 | `tests/Feature/TenantProvisioningTest.php` | Provisioning, rollback per langkah, grant MySQL, ekspor & hapus |
 | `tests/Feature/TenantAuthTest.php` | Login lintas tenant, replay cookie, throttle, idle, reset, undangan |
 | `tests/Feature/RbacTest.php` | Peran bawaan, cache permission lintas tenant, 403, anti-eskalasi |
 | `tests/Feature/AuditTrailTest.php` | Append-only di level MySQL, tanpa DDL, jejak perubahan & autentikasi, hard delete klinis, akses baca, halaman audit |
-| `tests/Feature/TenantQueueTest.php` | **Test kritis worker**: job A/B/A berselang-seling di worker Redis sungguhan; mismatch konteks; tag Horizon; token tidak di payload; `retry_after`; akses Horizon |
+| `tests/Feature/TenantQueueTest.php` | Dispatch dari pusat, tag Horizon, token tidak di payload, `retry_after`, akses Horizon |
 | `tests/Fixtures/` | `ClinicalNote` (model klinis tiruan) dan job tiruan |
+| `tests/Support/helpers.php` | Helper lintas berkas (login lewat cookie, worker, koneksi admin, `expectDenied`) |
+
+### 16.1 Suite isolasi tenant
+
+`tests/Feature/TenantIsolationTest.php` adalah satu tempat yang membuktikan
+isolasi. Test isolasi yang sebelumnya tersebar di berkas fitur **dipindahkan**
+ke sini (bukan disalin), supaya tidak ada dua versi yang menyimpang.
+
+| # | Butir (Sprint 1 §S1-09) | Bukti |
+|---|---|---|
+| 1 | Model tenant A tidak terlihat dari B | Baris & email per klinik; database dan user MySQL berbeda; user MySQL A ditolak membaca database B |
+| 2 | Sesi/login tidak menyeberang | Kredensial A ditolak di B; cookie A diputar ulang ke B → tamu, tanpa identitas bocor lewat props, cookie hangus |
+| 3 | Cache tidak bertabrakan | Kunci sama, nilai berbeda per klinik; pusat tidak melihat keduanya |
+| 4 | Job di konteks yang benar | Job A/B/A di **worker Redis sungguhan** yang semula di konteks B, atas record ber-id sama; mismatch konteks gagal tanpa efek samping |
+| 5 | Berkas terpisah | Unggahan & disk `local`/`public` di A tidak terlihat di B maupun pusat; berkas fisik di bawah `storage/tenant<id>` |
+| 6 | Migrasi baru di semua tenant | Migrasi sementara terpasang di tiga tenant **dan** tenant yang dibuat sesudahnya, dengan hak runtime tersinkron; kegagalan di satu tenant melempar keras dan tuntas setelah dijalankan ulang |
+| 7 | Koneksi pusat tak bisa query tabel klinis | Nama tabel berkualifikasi, `CREATE DATABASE`, `mysql.user` ditolak MySQL; tenant tidak pernah memakai kredensial admin |
+| 8 | Celah yang pernah ditemukan | Throttle login lintas klinik, cache permission spatie, role kustom, broker password di satu proses, jejak audit per klinik |
+
+Aturan: celah isolasi baru → test di sini dulu, pastikan gagal, baru perbaiki.
+
+### 16.2 CI
+
+`.github/workflows/tests.yml`, di MySQL 8.4 + Redis 7 sebagai service:
+
+```mermaid
+flowchart LR
+    push[push / PR] --> lint[Lint<br/>Pint · tsc]
+    push --> iso[Isolasi tenant<br/>--group=isolation]
+    iso -->|lulus| full[Suite lengkap<br/>--exclude-group=isolation]
+```
+
+Setiap job memulai dari checkout bersih: `composer install`, `npm ci`,
+`npm run build` (halaman Inertia dirender lewat `@vite`), `.env.example` →
+`.env`, dan user MySQL pusat dari `docker/mysql/central-user.sql`. Langkah yang
+sama disimulasikan di salinan repo tanpa `vendor`, `node_modules`, `.env`, dan
+build sebelum workflow ini di-commit.
+
+Agar benar-benar menjadi gerbang, ketiga job perlu dijadikan *required status
+check* di proteksi branch `main`. Pengaturan itu ada di GitHub, bukan di repo.
 
 Prinsip:
 
@@ -950,6 +1013,10 @@ Prinsip:
   B dibuktikan dulu valid di klinik A.
 - **Uji mutasi** untuk setiap pertahanan: buang pertahanannya, lalu pastikan ada
   test yang gagal.
+- **Menulis sungguhan, bukan membandingkan string.** Test berkas sebelumnya
+  hanya membandingkan hasil `storage_path()`; test koneksi pusat hanya
+  memeriksa `hasTable('users')`. Keduanya lolos di atas isolasi yang tidak
+  ada. Bukti isolasi kini selalu mencoba melakukan hal yang dilarang.
 - **Jebakan id kembar.** Test isolasi sengaja memakai record ber-id sama di dua
   tenant (admin id 1, poli UMUM id 1). Kode yang salah konteks tidak gagal di
   sana; ia diam-diam menyentuh milik klinik lain.
@@ -988,6 +1055,8 @@ flowchart LR
 | `make dev` | Server + Vite + Horizon (restart otomatis saat kode berubah) |
 | `php artisan tenants:migrate` | Migrasi semua tenant + sinkronisasi hak MySQL |
 | `make test` | Seluruh suite |
+| `make test-isolation` | Suite isolasi saja (gerbang CI) |
+| `make db-users` | User MySQL pusat berhak terbatas (idempoten) |
 | `make fresh` | Hapus semua tenant, migrasi & seed ulang |
 | `make tenants` | Daftar tenant & alamatnya |
 | `php artisan tenant:create <slug> "<nama>" <email> [--sync]` | Klinik baru |
@@ -1000,6 +1069,8 @@ Variabel lingkungan penting (lihat `.env.example`):
 | Variabel | Dev | Test |
 |---|---|---|
 | `CENTRAL_DOMAIN` | `simklinik.localhost` | `simklinik.test` |
+| `DB_USERNAME` / `DB_PASSWORD` (pusat, terbatas) | `simklinik` / `simklinik-lokal` | sama |
+| `TENANCY_ADMIN_DB_USERNAME` / `_PASSWORD` | `root` / `secret` | sama |
 | `TENANCY_DB_PREFIX` | `simklinik_` | `simklinik_test_` |
 | `TENANCY_DB_USER_PREFIX` | `sk_` | `skt_` |
 | `SESSION_DRIVER` / `CACHE_STORE` / `QUEUE_CONNECTION` | redis / redis / redis | redis (DB 15) / redis / sync |
@@ -1058,6 +1129,8 @@ database/
 └── seeders/                 DatabaseSeeder → TenantSeeder (pusat, lokal saja)
                              TenantDatabaseSeeder → RolesAndPermissions, Polyclinic (tenant)
 routes/       tenant.php, central.php, console.php
+docker/       mysql/central-user.sql (user MySQL pusat)
+.github/      workflows/tests.yml (lint → isolasi → suite lengkap)
 ```
 
 **Model mana hidup di mana:**
@@ -1096,6 +1169,9 @@ tanpa informasi baru.
 | 17 | `TenantAwareJob` memverifikasi, bukan memindahkan konteks | Model di properti job mungkin sudah di-restore dari database yang salah | Menginisialisasi ulang tenancy di `handle()` |
 | 18 | Token dibuat di dalam worker | Payload terlihat di Horizon; vendor tidak boleh bisa mengambil alih akun klinik | Notifikasi ter-queue biasa yang membawa token |
 | 19 | Basic auth fail-closed untuk Horizon sampai S1-10 | Dashboard memuat identitas pengguna klinik | Gate bawaan Horizon (terbuka tanpa syarat di `local`) |
+| 20 | Koneksi pusat berhak terbatas, admin server lewat `tenancy_admin` | Butir 7 S1-09 dan PRD §4.2 harus benar di level database, bukan konvensi | Satu user root untuk semua koneksi |
+| 21 | Satu berkas isolasi, test dipindahkan bukan disalin | Satu sumber bukti; tidak ada dua versi yang menyimpang | Test isolasi tersebar per fitur |
+| 22 | GitHub Actions dengan isolasi sebagai job gerbang | Remote repo di GitHub; suite lengkap tidak berarti di atas isolasi yang bocor | Satu job untuk semua test |
 
 ---
 
@@ -1105,7 +1181,6 @@ tanpa informasi baru.
 
 | Task | Dampak ke arsitektur |
 |---|---|
-| **S1-09** Suite isolasi lengkap | Satu berkas bukti isolasi; migrasi baru terpasang di semua tenant; masuk CI sebagai gerbang merge |
 | **S1-10** Panel vendor | Login vendor terpisah di `admin.simklinik.*`; ubah status tenant lewat UI; Horizon pindah dari basic auth ke login vendor |
 | **S1-11** Staging | Nginx + PHP-FPM, wildcard TLS via DNS-01, supervisor worker |
 
@@ -1132,6 +1207,15 @@ tanpa informasi baru.
   `PermissionAttached` sengaja belum didengarkan: seeder memicunya ratusan kali).
   Wajib sebelum ada UI pengaturan peran.
 - **Laporan audit siap cetak** (FR-M22.9) dan ekspornya belum ada.
-- **Kredensial `tenant_migrator`** masih kredensial admin pusat; tenant yang
-  dipindah ke server DB lain butuh akun admin server itu.
+- **Kredensial `tenancy_admin`** berada di environment yang sama dengan proses
+  web. Staging/produksi (S1-11) sebaiknya memisahkan environment web dari worker
+  provisioning, dan tenant yang dipindah ke server DB lain butuh akun admin
+  server itu.
+- **Berkas tenant tidak ikut `tenant:delete`.** Ekspor hanya berisi database, dan
+  direktori `storage/tenant<id>` tertinggal setelah tenant dihapus. Belum ada
+  fitur unggah, tetapi wajib beres sebelum ada.
+- **`tenants:migrate` berhenti di tenant pertama yang gagal**; tenant sesudahnya
+  tertinggal sampai dijalankan ulang. Skrip deploy (S1-11) harus menghentikan
+  rilis pada kode keluar bukan nol.
+- **Proteksi branch `main`** (required status checks) belum dipasang di GitHub.
 - **Notifikasi job gagal** ke operator (Horizon) belum dikonfigurasi.

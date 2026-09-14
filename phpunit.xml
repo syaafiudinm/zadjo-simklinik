@@ -35,8 +35,10 @@
         <env name="DB_HOST" value="127.0.0.1"/>
         <env name="DB_PORT" value="3307"/>
         <env name="DB_DATABASE" value="simklinik_testing"/>
-        <env name="DB_USERNAME" value="root"/>
-        <env name="DB_PASSWORD" value="secret"/>
+        <env name="DB_USERNAME" value="simklinik"/>
+        <env name="DB_PASSWORD" value="simklinik-lokal"/>
+        <env name="TENANCY_ADMIN_DB_USERNAME" value="root"/>
+        <env name="TENANCY_ADMIN_DB_PASSWORD" value="secret"/>
 
         <!-- Prefix terpisah supaya pembersihan test tidak pernah menyentuh
              database tenant milik lingkungan pengembangan. -->

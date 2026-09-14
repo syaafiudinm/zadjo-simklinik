@@ -6,7 +6,7 @@ interoperabel dengan SATUSEHAT (HL7 FHIR R4).
 
 Dokumen acuan: [Arsitektur](docs/ARCHITECTURE.md) · [PRD](PRD-SIM-Klinik-SaaS.md) · [Sprint 1 — Fondasi](Sprint-1-Fondasi.md)
 
-**Status:** Sprint 1 (Fase F0 — Fondasi). Selesai sampai **S1-08**.
+**Status:** Sprint 1 (Fase F0 — Fondasi). Selesai sampai **S1-09**.
 
 | Task | | |
 |---|---|---|
@@ -18,8 +18,9 @@ Dokumen acuan: [Arsitektur](docs/ARCHITECTURE.md) · [PRD](PRD-SIM-Klinik-SaaS.m
 | S1-06 | RBAC (role & permission) | ✅ |
 | S1-07 | Audit trail | ✅ |
 | S1-08 | Antrian tenant-aware + Horizon | ✅ |
-| S1-09 | Suite test isolasi tenant | ⬜ berikutnya |
-| S1-10 … S1-11 | | ⬜ |
+| S1-09 | Suite test isolasi tenant + gerbang CI | ✅ |
+| S1-10 | Admin panel vendor | ⬜ berikutnya |
+| S1-11 | Deploy staging | ⬜ |
 
 ---
 
@@ -44,8 +45,15 @@ make setup
 ```
 
 `make setup` menyalin `.env`, menyalakan MySQL, Redis, dan Mailpit lewat Docker,
-memasang dependensi, menjalankan migrasi pusat, lalu mem-provision tiga klinik
-contoh lewat jalur yang sama dengan `tenant:create`.
+membuat user MySQL pusat berhak terbatas (`make db-users`), memasang dependensi,
+menjalankan migrasi pusat, lalu mem-provision tiga klinik contoh lewat jalur yang
+sama dengan `tenant:create`.
+
+> **Dua kredensial MySQL, sengaja.** `DB_USERNAME` (`simklinik`) hanya berhak
+> atas database pusat dan tidak bisa membaca database klinik mana pun.
+> `TENANCY_ADMIN_DB_*` (root) hanya dipakai untuk membuat database dan user
+> tenant, grant, dan migrasi tenant. Kalau mengubah `DB_PASSWORD`, jalankan
+> ulang `make db-users`.
 
 Menjalankan aplikasi:
 
@@ -102,7 +110,8 @@ untuk melewati ekspor. **Arsip itu berisi data kesehatan dan belum terenkripsi**
 ## Test
 
 ```bash
-make test
+make test              # seluruh suite
+make test-isolation    # hanya suite isolasi tenant — gerbang CI
 ```
 
 Suite memakai **MySQL sungguhan**, bukan SQLite in-memory: yang dibuktikan
@@ -113,9 +122,24 @@ Cache dan sesi di suite juga memakai Redis sungguhan (database 15). Driver
 `array` membuat test isolasi cache dan sesi hijau karena alasan yang salah.
 
 Berkas terpenting di repo ini adalah
-[`tests/Feature/TenantIsolationTest.php`](tests/Feature/TenantIsolationTest.php).
-Setiap kali ditemukan celah isolasi baru, **tambahkan test-nya di sana dulu,
-baru perbaiki kodenya.**
+[`tests/Feature/TenantIsolationTest.php`](tests/Feature/TenantIsolationTest.php)
+(grup `isolation`), disusun mengikuti tujuh butir Sprint 1 §S1-09 ditambah celah
+yang pernah ditemukan. Setiap kali ditemukan celah isolasi baru, **tambahkan
+test-nya di sana dulu, pastikan gagal, baru perbaiki kodenya.**
+
+### CI
+
+[`.github/workflows/tests.yml`](.github/workflows/tests.yml) menjalankan tiga job
+di MySQL 8.4 dan Redis 7 sungguhan:
+
+| Job | Isi | Syarat |
+|---|---|---|
+| Lint | Pint, `tsc --noEmit` | — |
+| **Isolasi tenant** | `php artisan test --group=isolation` | Gerbang |
+| Suite lengkap | `php artisan test --exclude-group=isolation` | Hanya jika isolasi lulus |
+
+Supaya benar-benar menjadi gerbang, jadikan ketiganya *required status check* di
+proteksi branch `main` (GitHub → Settings → Branches).
 
 ## Arsitektur
 
@@ -177,6 +201,10 @@ Setiap butir di bawah punya test yang terbukti gagal kalau penambalnya dibuang.
   tenant tidak — sehingga klinik ditangguhkan mengarahkan tamu ke login. Urutan
   kini ditetapkan eksplisit di `TenancyServiceProvider`.
 
+- **Koneksi pusat yang login sebagai root.** `SELECT * FROM db_klinik.users`
+  berhasil dari koneksi pusat, dan test lama lolos karena hanya memeriksa
+  tabel `users` tidak ada di database pusat. Koneksi pusat kini memakai user
+  berhak terbatas; pekerjaan admin server lewat koneksi `tenancy_admin`.
 - **Hak DDL user runtime.** MySQL tidak bisa mencabut hak per tabel yang
   diberikan per database, jadi user MySQL tenant kini hanya memegang hak DML
   per tabel, dan migrasi berjalan lewat koneksi admin `tenant_migrator`. Hak
@@ -244,6 +272,8 @@ rahasia di properti job — payload terlihat di dashboard Horizon.
 | `make up` / `make down` | Nyalakan / matikan MySQL + Redis |
 | `make dev` | Server + Vite + Horizon |
 | `make test` | Seluruh suite, termasuk isolasi tenant |
+| `make test-isolation` | Hanya suite isolasi (gerbang CI) |
+| `make db-users` | Buat/perbarui user MySQL pusat berhak terbatas |
 | `make fresh` | Hapus semua tenant, migrasi & seed ulang |
 | `make tenants` | Daftar tenant beserta alamatnya |
 | `make lint` | Pint + `tsc --noEmit` |

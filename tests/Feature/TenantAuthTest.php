@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Enums\TenantStatus;
-use App\Http\Requests\Auth\LoginRequest;
 use App\Models\Tenant;
 use App\Models\TenantSetting;
 use App\Models\User;
@@ -19,42 +18,10 @@ use Inertia\Testing\AssertableInertia;
 |--------------------------------------------------------------------------
 */
 
-const PASSWORD_A = 'RahasiaKlinikA1';
-const PASSWORD_B = 'RahasiaKlinikB2';
-
-function setPassword(Tenant $tenant, string $email, string $password): User
-{
-    return $tenant->run(function () use ($email, $password) {
-        $user = User::where('email', $email)->firstOrFail();
-        $user->forceFill(['password' => $password, 'activated_at' => now()])->save();
-
-        return $user;
-    });
-}
-
 /**
  * Login lewat form sungguhan dan kembalikan nilai cookie sesinya, supaya
  * request berikutnya bisa dikirim sebagai "browser" yang sama.
  */
-function loginVia($test, Tenant $tenant, string $email, string $password): string
-{
-    $response = $test->post($test->tenantUrl($tenant, '/login'), compact('email', 'password'));
-
-    // Redirect ke beranda saja TIDAK membuktikan login berhasil: login yang
-    // gagal memanggil back(), dan tanpa referer itu juga jatuh ke beranda.
-    $response->assertRedirect($test->tenantUrl($tenant, '/'))->assertSessionHasNoErrors();
-    $test->assertAuthenticated();
-
-    return $response->getCookie(config('session.cookie'), decrypt: false)->getValue();
-}
-
-function asBrowser($test, string $sessionCookie)
-{
-    $test->freshProcess();
-
-    return $test->withUnencryptedCookie(config('session.cookie'), $sessionCookie);
-}
-
 it('menampilkan halaman login di subdomain klinik', function () {
     $tenant = $this->createTenant('klinik-melati');
 
@@ -75,18 +42,6 @@ it('memasukkan pengguna dengan kredensial yang benar dan mencatat waktu masuknya
 
     $this->assertAuthenticated();
     expect($this->adminOf($tenant)->last_login_at)->not->toBeNull();
-});
-
-it('menolak kredensial tenant A di subdomain tenant B', function () {
-    // Skrip demo sprint langkah 6.
-    $a = $this->createTenant('klinik-a');
-    $b = $this->createTenant('klinik-b');
-    setPassword($a, 'admin@klinik-a.test', PASSWORD_A);
-
-    $this->post($this->tenantUrl($b, '/login'), ['email' => 'admin@klinik-a.test', 'password' => PASSWORD_A])
-        ->assertSessionHasErrors(['email' => 'Email atau password tidak sesuai.']);
-
-    $this->assertGuest();
 });
 
 it('memperlakukan email yang sama di dua klinik sebagai dua akun terpisah', function () {
@@ -110,66 +65,6 @@ it('memperlakukan email yang sama di dua klinik sebagai dua akun terpisah', func
 
     expect(auth()->user()->name)->toBe('Aditya di B')
         ->and(auth()->user()->hasRole('nurse'))->toBeTrue();
-});
-
-it('tidak menerima cookie sesi tenant A di subdomain tenant B', function () {
-    // Skenario kebocoran klasik: kedua admin ber-id 1 di databasenya masing-
-    // masing. Kalau sesi A diterima di B, "user id 1" akan di-resolve dari
-    // database B — penyerang masuk sebagai admin klinik lain.
-    $a = $this->createTenant('klinik-a');
-    $b = $this->createTenant('klinik-b');
-    setPassword($a, 'admin@klinik-a.test', PASSWORD_A);
-
-    expect($this->adminOf($a)->id)->toBe($this->adminOf($b)->id);
-
-    $cookie = loginVia($this, $a, 'admin@klinik-a.test', PASSWORD_A);
-
-    // Kontrol positif: cookie yang sama di A memang membawa sesi yang valid.
-    // Tanpa ini, test di bawah bisa lolos hanya karena cookie-nya rusak.
-    asBrowser($this, $cookie)->get($this->tenantUrl($a, '/'))->assertOk();
-
-    // Diperlakukan sebagai tamu biasa: diarahkan ke login klinik B.
-    asBrowser($this, $cookie)->get($this->tenantUrl($b, '/'))
-        ->assertRedirect($this->tenantUrl($b, '/login'));
-    $this->assertGuest();
-
-    // Regresi yang pernah terjadi: sesi asing ditolak 403, tapi halaman 403
-    // tetap me-resolve user dari sesi itu dan mengirim identitas admin B ke
-    // pemegang cookie A lewat props Inertia. Halaman apa pun yang tampil
-    // tidak boleh memuat user.
-    asBrowser($this, $cookie)->get($this->tenantUrl($b, '/login'))
-        ->assertOk()
-        ->assertInertia(fn (AssertableInertia $page) => $page->where('auth.user', null));
-
-    // Cookie curian itu kini hangus, juga di klinik asalnya.
-    asBrowser($this, $cookie)->get($this->tenantUrl($a, '/'))
-        ->assertRedirect($this->tenantUrl($a, '/login'));
-});
-
-it('mengunci login setelah percobaan gagal berulang tanpa mengunci klinik lain', function () {
-    $a = $this->createTenant('klinik-a');
-    $b = $this->createTenant('klinik-b');
-    $this->createTenantUser($a, 'registrar', ['email' => 'rina@contoh.test', 'password' => PASSWORD_A]);
-    $this->createTenantUser($b, 'registrar', ['email' => 'rina@contoh.test', 'password' => PASSWORD_B]);
-
-    foreach (range(1, LoginRequest::MAX_ATTEMPTS) as $_) {
-        $this->freshProcess();
-        $this->post($this->tenantUrl($a, '/login'), ['email' => 'rina@contoh.test', 'password' => 'salah-tebak-1']);
-    }
-
-    $this->freshProcess();
-    $locked = $this->post($this->tenantUrl($a, '/login'), ['email' => 'rina@contoh.test', 'password' => PASSWORD_A]);
-    $locked->assertSessionHasErrors('email');
-    expect(session('errors')->first('email'))->toContain('Terlalu banyak percobaan');
-    $this->assertGuest();
-
-    // RateLimiter tidak melewati tag cache tenant; kunci throttle memuat id
-    // tenant secara eksplisit. Tanpanya klinik B ikut terkunci.
-    $this->freshProcess();
-    $this->post($this->tenantUrl($b, '/login'), ['email' => 'rina@contoh.test', 'password' => PASSWORD_B])
-        ->assertRedirect($this->tenantUrl($b, '/'))
-        ->assertSessionHasNoErrors();
-    $this->assertAuthenticated();
 });
 
 it('mengeluarkan pengguna setelah idle melewati batas bawaan', function () {

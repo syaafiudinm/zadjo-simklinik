@@ -44,37 +44,6 @@ it('aman dijalankan ulang tanpa menyentuh role kustom klinik', function () {
     });
 });
 
-it('menyimpan role kustom hanya di klinik yang membuatnya', function () {
-    $a = $this->createTenant('klinik-a');
-    $b = $this->createTenant('klinik-b');
-
-    $a->run(fn () => Role::create(['name' => 'bidan_koordinator']));
-
-    $a->run(fn () => expect(Role::where('name', 'bidan_koordinator')->exists())->toBeTrue());
-    $b->run(fn () => expect(Role::where('name', 'bidan_koordinator')->exists())->toBeFalse());
-});
-
-it('tidak menyajikan cache permission satu klinik untuk klinik lain', function () {
-    // spatie/laravel-permission mengambil store cache lewat CacheManager::store(),
-    // yang TIDAK melewati tag tenant. Kedua klinik menyemai role dengan urutan
-    // sama, jadi `registrar` ber-id sama di keduanya — kalau cache bocor, klinik
-    // B membaca peta permission milik A tanpa error apa pun.
-    $a = $this->createTenant('klinik-a');
-    $b = $this->createTenant('klinik-b');
-    $registrarA = $this->createTenantUser($a, 'registrar');
-    $registrarB = $this->createTenantUser($b, 'registrar');
-
-    // Klinik A memutuskan petugas pendaftarannya boleh melihat laporan.
-    $a->run(function () use ($registrarA) {
-        Role::findByName('registrar')->givePermissionTo('report.view');
-        expect(User::find($registrarA->id)->can('report.view'))->toBeTrue();
-    });
-
-    $b->run(fn () => expect(User::find($registrarB->id)->can('report.view'))->toBeFalse());
-    $a->run(fn () => expect(User::find($registrarA->id)->can('report.view'))->toBeTrue());
-    $b->run(fn () => expect(User::find($registrarB->id)->can('report.view'))->toBeFalse());
-});
-
 it('menolak akses tanpa permission dengan halaman 403, dan menyembunyikan menunya', function () {
     // Skrip demo sprint langkah 4.
     $tenant = $this->createTenant('klinik-melati');

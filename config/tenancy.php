@@ -62,10 +62,15 @@ return [
         'central_connection' => env('DB_CONNECTION', 'mysql'),
 
         /**
-         * Koneksi yang dipakai sebagai template koneksi tenant yang dibuat dinamis.
-         * Jangan menamai koneksi template `tenant` — nama itu dipakai paket.
+         * Template koneksi tenant, sekaligus koneksi yang dipakai manager untuk
+         * CREATE DATABASE / CREATE USER / GRANT. Lihat config/database.php →
+         * tenancy_admin. Jangan menamai koneksi template `tenant` — nama itu
+         * dipakai paket.
          */
-        'template_tenant_connection' => null,
+        'template_tenant_connection' => 'tenancy_admin',
+
+        /** Koneksi berhak admin server untuk grant dan migrasi tenant. */
+        'admin_connection' => 'tenancy_admin',
 
         /**
          * Nama database tenant = prefix + slug + suffix (lihat AppServiceProvider).

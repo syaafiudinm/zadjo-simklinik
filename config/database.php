@@ -63,6 +63,38 @@ return [
             ]) : [],
         ],
 
+        /*
+        | Kredensial admin server MySQL, TERPISAH dari koneksi pusat `mysql`.
+        |
+        | Hanya dipakai untuk pekerjaan yang memang butuh hak server: membuat
+        | dan menghapus database tenant, membuat user MySQL per tenant,
+        | menyinkronkan grant, dan migrasi tenant. Koneksi pusat sehari-hari
+        | login sebagai user yang hanya punya hak atas database pusat, sehingga
+        | kode pusat — landing, panel vendor — secara struktural tidak bisa
+        | membaca tabel klinis mana pun (PRD §4.2).
+        |
+        | Juga dipakai sebagai template koneksi tenant (host, port, charset);
+        | username & password tenant selalu menimpa kredensial di sini.
+        */
+        'tenancy_admin' => [
+            'driver' => 'mysql',
+            'host' => env('TENANCY_ADMIN_DB_HOST', env('DB_HOST', '127.0.0.1')),
+            'port' => env('TENANCY_ADMIN_DB_PORT', env('DB_PORT', '3306')),
+            'database' => null,
+            'username' => env('TENANCY_ADMIN_DB_USERNAME', 'root'),
+            'password' => env('TENANCY_ADMIN_DB_PASSWORD', ''),
+            'unix_socket' => env('DB_SOCKET', ''),
+            'charset' => env('DB_CHARSET', 'utf8mb4'),
+            'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+            ]) : [],
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

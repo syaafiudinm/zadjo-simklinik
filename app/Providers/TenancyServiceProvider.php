@@ -179,14 +179,14 @@ class TenancyServiceProvider extends ServiceProvider
      *
      * Host dan port diambil dari baris tenant, bukan dari koneksi pusat, supaya
      * tenant yang dipindah ke server DB lain tetap dimigrasi di server yang
-     * benar. Kredensialnya masih kredensial pusat — kalau server lain itu
+     * benar. Kredensialnya kredensial `tenancy_admin` — kalau server lain itu
      * punya akun admin berbeda, di sinilah ia perlu dibaca.
      */
     protected function defineMigratorConnection(Tenant $tenant): void
     {
-        $central = config('database.connections.'.config('tenancy.database.central_connection'));
+        $admin = config('database.connections.'.config('tenancy.database.admin_connection'));
 
-        config(['database.connections.tenant_migrator' => array_merge($central, array_filter([
+        config(['database.connections.tenant_migrator' => array_merge($admin, array_filter([
             'host' => $tenant->db_host,
             'port' => $tenant->db_port,
         ]), [

@@ -122,7 +122,8 @@ it('menolak user MySQL satu tenant membaca database tenant lain di level MySQL',
     $b = $this->createTenant('klinik-b');
 
     $port = config('database.connections.mysql.port');
-    $pdo = new PDO("mysql:host=127.0.0.1;port={$port}", $a->db_username, $a->db_password);
+    $host = config('database.connections.mysql.host');
+    $pdo = new PDO("mysql:host={$host};port={$port}", $a->db_username, $a->db_password);
 
     expect((int) $pdo->query("SELECT COUNT(*) FROM `{$a->db_name}`.users")->fetchColumn())->toBe(1);
 

@@ -1,0 +1,166 @@
+# CI SIMKlinik.
+#
+# Urutan disengaja: suite isolasi tenant adalah GERBANG. Suite lengkap hanya
+# berjalan kalau isolasi lulus — test fitur yang hijau di atas isolasi yang
+# bocor tidak bermakna apa-apa (Sprint 1 §S1-09).
+#
+# Wajibkan job "Isolasi tenant" dan "Suite lengkap" sebagai status check di
+# aturan proteksi branch `main` supaya PR tidak bisa di-merge tanpa keduanya.
+
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PHP_VERSION: '8.3'
+  NODE_VERSION: '20'
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: pdo_mysql, pcntl, posix, zip, bcmath
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: npm ci
+      - name: Pint
+        run: vendor/bin/pint --test
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+  isolation:
+    name: Isolasi tenant
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      # Port host dicocokkan dengan phpunit.xml (dev memakai 3307 supaya tidak
+      # bentrok dengan MySQL XAMPP).
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+        ports: ['3307:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -psecret"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: pdo_mysql, pcntl, posix, zip, bcmath
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Dependensi
+        run: |
+          composer install --no-interaction --prefer-dist --no-progress
+          npm ci
+
+      # Halaman Inertia dirender lewat @vite; tanpa manifest build, test HTTP gagal.
+      - name: Build frontend
+        run: npm run build
+
+      - name: Environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      # Sama persis dengan `make db-users` di lokal: koneksi pusat login sebagai
+      # user yang TIDAK bisa membaca database klinik — salah satu hal yang
+      # dibuktikan suite isolasi.
+      - name: User MySQL pusat berhak terbatas
+        run: |
+          sed -e 's/@@APP_USER@@/simklinik/g' -e 's/@@APP_PASSWORD@@/simklinik-lokal/g' docker/mysql/central-user.sql \
+            | mysql --protocol=tcp -h 127.0.0.1 -P 3307 -uroot -psecret
+
+      - name: Suite isolasi tenant
+        run: php artisan test --group=isolation
+
+  tests:
+    name: Suite lengkap
+    needs: isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      # Port host dicocokkan dengan phpunit.xml (dev memakai 3307 supaya tidak
+      # bentrok dengan MySQL XAMPP).
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: secret
+        ports: ['3307:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -psecret"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: pdo_mysql, pcntl, posix, zip, bcmath
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Dependensi
+        run: |
+          composer install --no-interaction --prefer-dist --no-progress
+          npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: User MySQL pusat berhak terbatas
+        run: |
+          sed -e 's/@@APP_USER@@/simklinik/g' -e 's/@@APP_PASSWORD@@/simklinik-lokal/g' docker/mysql/central-user.sql \
+            | mysql --protocol=tcp -h 127.0.0.1 -P 3307 -uroot -psecret
+
+      # Isolasi sudah lulus di job sebelumnya; tidak dijalankan dua kali.
+      - name: Suite lengkap
+        run: php artisan test --exclude-group=isolation

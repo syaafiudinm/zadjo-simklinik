@@ -22,14 +22,68 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
-        <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
-        <env name="SESSION_DRIVER" value="array"/>
-        <env name="PULSE_ENABLED" value="false"/>
-        <env name="TELESCOPE_ENABLED" value="false"/>
-        <env name="NIGHTWATCH_ENABLED" value="false"/>
+
+        <!--
+            Test isolasi tenant memakai MySQL sungguhan, bukan SQLite in-memory.
+            Yang dibuktikan suite ini adalah bahwa dua tenant benar-benar berada
+            di dua database terpisah; SQLite akan membuktikan sesuatu yang lain,
+            di driver yang tidak pernah dipakai produksi.
+        -->
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
+        <env name="DB_PORT" value="3307"/>
+        <env name="DB_DATABASE" value="simklinik_testing"/>
+        <env name="DB_USERNAME" value="simklinik"/>
+        <env name="DB_PASSWORD" value="simklinik-lokal"/>
+        <env name="TENANCY_ADMIN_DB_USERNAME" value="root"/>
+        <env name="TENANCY_ADMIN_DB_PASSWORD" value="secret"/>
+
+        <!-- Prefix terpisah supaya pembersihan test tidak pernah menyentuh
+             database tenant milik lingkungan pengembangan. -->
+        <env name="TENANCY_DB_PREFIX" value="simklinik_test_"/>
+        <env name="TENANCY_DB_USER_PREFIX" value="skt_"/>
+
+        <!--
+            Cache memakai Redis sungguhan, bukan driver `array`. Driver array
+            hidup di memori instance-nya sendiri, dan setiap kali tenancy
+            di-bootstrap paket mengganti instance cache manager — sehingga
+            nilai yang baru ditulis "hilang" karena alasan yang tidak ada
+            hubungannya dengan isolasi. Test isolasi cache jadi hijau-palsu.
+            Database Redis 15 dipakai khusus test dan dikosongkan tiap test.
+        -->
+        <env name="CACHE_STORE" value="redis"/>
+        <env name="REDIS_CLIENT" value="predis"/>
+        <env name="REDIS_HOST" value="127.0.0.1"/>
+        <env name="REDIS_PORT" value="6379"/>
+        <env name="REDIS_CACHE_DB" value="15"/>
+
+        <!--
+            Sesi juga di Redis sungguhan (database 15 lewat koneksi `cache`).
+            Test isolasi sesi memutar ulang cookie tenant A ke tenant B; dengan
+            driver `array` sesi tidak bertahan antar request dan test itu akan
+            lolos karena alasan yang salah.
+        -->
+        <env name="SESSION_DRIVER" value="redis"/>
+        <env name="SESSION_CONNECTION" value="cache"/>
+
+        <!--
+            Antrian bawaan tetap `sync`. Test yang membuktikan job berjalan di
+            konteks tenant yang benar memakai koneksi `redis` secara eksplisit
+            dan menjalankan worker sungguhan; antrian dan metrik Horizon-nya
+            diarahkan ke database Redis test yang sama.
+        -->
+        <env name="REDIS_QUEUE_CONNECTION" value="cache"/>
+        <env name="HORIZON_REDIS_CONNECTION" value="cache"/>
+        <env name="HORIZON_PREFIX" value="simklinik_test_horizon:"/>
+        <env name="HORIZON_BASIC_AUTH_USERNAME" value="operator"/>
+        <env name="HORIZON_BASIC_AUTH_PASSWORD" value="rahasia-test"/>
+
+        <!-- Domain test sengaja berbeda dari domain dev, untuk membuktikan
+             resolusi subdomain memang dibaca dari konfigurasi. -->
+        <env name="APP_URL" value="http://simklinik.test"/>
+        <env name="CENTRAL_DOMAIN" value="simklinik.test"/>
+        <env name="CENTRAL_DOMAINS" value="simklinik.test,admin.simklinik.test"/>
     </php>
 </phpunit>

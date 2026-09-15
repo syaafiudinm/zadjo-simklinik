@@ -3,12 +3,11 @@
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title inertia>{{ config('app.name', 'Laravel') }}</title>
+        <title inertia>{{ config('app.name', 'SIMKlinik') }}</title>
 
-        <!-- Favicon -->
-        <link rel="icon" type="image/svg+xml" href="/initly.svg">
+        <link rel="icon" href="/favicon.ico" sizes="any">
 
-        @if(app()->environment('local'))
+        @if (app()->environment('local'))
             @viteReactRefresh
         @endif
 

@@ -1,59 +1,76 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Models\Concerns\Auditable;
+use App\Notifications\ResetPasswordNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Spatie\Permission\Traits\HasRoles;
 
+/**
+ * Pengguna klinik.
+ *
+ * Tabelnya hidup di database TENANT, bukan pusat (lihat
+ * database/migrations/tenant/). Konsekuensinya: dua klinik boleh punya user
+ * dengan email yang sama, dan tidak ada satu pun query yang bisa menjangkau
+ * user klinik lain — isolasinya struktural, bukan hasil `where tenant_id = ?`
+ * yang bisa terlupa di satu query.
+ *
+ * @property \Carbon\Carbon|null $last_login_at
+ * @property \Carbon\Carbon|null $activated_at
+ */
 class User extends Authenticatable
 {
+    use Auditable;
+
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
-    protected $fillable = ["name", "email", "password"];
+    use HasRoles;
+    use Notifiable;
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
-    protected $hidden = ["password", "remember_token"];
+    protected string $guard_name = 'web';
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
+    protected $fillable = ['name', 'email', 'password'];
+
+    protected $hidden = ['password', 'remember_token'];
+
     protected function casts(): array
     {
         return [
-            "email_verified_at" => "datetime",
-            "password" => "hashed",
+            'email_verified_at' => 'datetime',
+            'last_login_at' => 'datetime',
+            'activated_at' => 'datetime',
+            'password' => 'hashed',
         ];
     }
 
-    public function isAdmin(): bool
+    /**
+     * `last_login_at` berubah setiap kali masuk dan sudah tercatat sebagai
+     * kejadian `login` tersendiri; mencatatnya juga sebagai "mengubah
+     * pengguna" hanya menggandakan setiap baris login.
+     */
+    public function auditExcludedAttributes(): array
     {
-        return $this->role == "admin";
+        return ['created_at', 'updated_at', 'last_login_at', 'remember_token'];
     }
 
-    public function isUser(): bool
+    public function auditLabel(): string
     {
-        return $this->role == "user";
+        return "{$this->name} <{$this->email}>";
     }
 
-    public function savedStarterKits()
+    /**
+     * Tautan reset password harus menunjuk subdomain klinik tempat user ini
+     * terdaftar — notifikasi bawaan Laravel membangun URL dari rute tanpa
+     * tahu soal tenant.
+     */
+    public function sendPasswordResetNotification($token): void
     {
-        return $this->belongsToMany(
-            StarterKit::class,
-            "saved_starter_kits",
-        )->withTimestamps();
+        $this->notify(new ResetPasswordNotification($token));
     }
 }

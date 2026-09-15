@@ -68,9 +68,15 @@ return [
             'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
+            // WAJIB lebih besar dari timeout job terlama (ProvisionTenant: 170
+            // detik) dan timeout supervisor Horizon. Kalau lebih kecil, Redis
+            // menyerahkan job yang MASIH berjalan ke worker kedua — dua
+            // provisioning untuk satu klinik berjalan bersamaan. Dijaga test.
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 240),
             'block_for' => null,
-            'after_commit' => false,
+            // Job yang di-dispatch di dalam transaksi baru masuk antrian setelah
+            // commit — worker tidak pernah membaca baris yang belum ada.
+            'after_commit' => true,
         ],
 
         'deferred' => [
